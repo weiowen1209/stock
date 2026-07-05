@@ -1,0 +1,23 @@
+{
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@vitejs/plugin-vue": "latest",
+    "axios": "latest",
+    "echarts": "latest",
+    "element-plus": "latest",
+    "nprogress": "latest",
+    "pinia": "latest",
+    "vite": "latest",
+    "vue": "latest",
+    "vue-echarts": "latest"
+  },
+  "devDependencies": {
+    "@types/nprogress": "latest",
+    "typescript": "latest",
+    "vue-tsc": "latest"
+  }
+}

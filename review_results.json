@@ -1,0 +1,803 @@
+{
+  "timestamp": "2026-07-05T14:01:40.209530",
+  "input_dir": "D:\\work\\stock\\backend",
+  "total_files": 44,
+  "files_analyzed": 44,
+  "issues": {
+    "critical": [],
+    "normal": [
+      {
+        "type": "潜在Bug",
+        "line": 119,
+        "severity": "一般",
+        "description": "可能存在空指针风险：missing",
+        "suggestion": "显式检查变量是否为None",
+        "file": "base_data_service.py"
+      },
+      {
+        "type": "潜在Bug",
+        "line": 37,
+        "severity": "一般",
+        "description": "可能存在空指针风险：changed",
+        "suggestion": "显式检查变量是否为None",
+        "file": "concept_service.py"
+      },
+      {
+        "type": "潜在Bug",
+        "line": 18,
+        "severity": "一般",
+        "description": "可能存在空指针风险：inserted",
+        "suggestion": "显式检查变量是否为None",
+        "file": "services.py"
+      },
+      {
+        "type": "潜在Bug",
+        "line": 29,
+        "severity": "一般",
+        "description": "可能存在空指针风险：industry_chain",
+        "suggestion": "显式检查变量是否为None",
+        "file": "services.py"
+      },
+      {
+        "type": "潜在Bug",
+        "line": 31,
+        "severity": "一般",
+        "description": "可能存在空指针风险：keyword",
+        "suggestion": "显式检查变量是否为None",
+        "file": "services.py"
+      },
+      {
+        "type": "命名规范",
+        "line": 0,
+        "severity": "一般",
+        "description": "Python文件名不符合snake_case规范: __init__.py",
+        "suggestion": "使用小写字母和下划线，如 my_module.py",
+        "file": "__init__.py"
+      },
+      {
+        "type": "潜在Bug",
+        "line": 29,
+        "severity": "一般",
+        "description": "可能存在空指针风险：start",
+        "suggestion": "显式检查变量是否为None",
+        "file": "api\\kline.py"
+      },
+      {
+        "type": "潜在Bug",
+        "line": 31,
+        "severity": "一般",
+        "description": "可能存在空指针风险：end",
+        "suggestion": "显式检查变量是否为None",
+        "file": "api\\kline.py"
+      },
+      {
+        "type": "潜在Bug",
+        "line": 20,
+        "severity": "一般",
+        "description": "可能存在空指针风险：codes",
+        "suggestion": "显式检查变量是否为None",
+        "file": "api\\quotes.py"
+      },
+      {
+        "type": "命名规范",
+        "line": 0,
+        "severity": "一般",
+        "description": "Python文件名不符合snake_case规范: __init__.py",
+        "suggestion": "使用小写字母和下划线，如 my_module.py",
+        "file": "api\\__init__.py"
+      },
+      {
+        "type": "潜在Bug",
+        "line": 37,
+        "severity": "一般",
+        "description": "可能存在空指针风险：start",
+        "suggestion": "显式检查变量是否为None",
+        "file": "data_provider\\sina_provider.py"
+      },
+      {
+        "type": "潜在Bug",
+        "line": 39,
+        "severity": "一般",
+        "description": "可能存在空指针风险：end",
+        "suggestion": "显式检查变量是否为None",
+        "file": "data_provider\\sina_provider.py"
+      },
+      {
+        "type": "命名规范",
+        "line": 0,
+        "severity": "一般",
+        "description": "Python文件名不符合snake_case规范: __init__.py",
+        "suggestion": "使用小写字母和下划线，如 my_module.py",
+        "file": "data_provider\\__init__.py"
+      },
+      {
+        "type": "命名规范",
+        "line": 0,
+        "severity": "一般",
+        "description": "Python文件名不符合snake_case规范: __init__.py",
+        "suggestion": "使用小写字母和下划线，如 my_module.py",
+        "file": "init_data\\__init__.py"
+      },
+      {
+        "type": "命名规范",
+        "line": 0,
+        "severity": "一般",
+        "description": "Python文件名不符合snake_case规范: __init__.py",
+        "suggestion": "使用小写字母和下划线，如 my_module.py",
+        "file": "schemas\\__init__.py"
+      },
+      {
+        "type": "命名规范",
+        "line": 0,
+        "severity": "一般",
+        "description": "Python文件名不符合snake_case规范: __init__.py",
+        "suggestion": "使用小写字母和下划线，如 my_module.py",
+        "file": "sync\\__init__.py"
+      }
+    ],
+    "optimize": [
+      {
+        "type": "代码可读性",
+        "line": 152,
+        "severity": "优化",
+        "description": "代码行过长（121字符）",
+        "suggestion": "建议将长行拆分为多行，推荐不超过80字符",
+        "file": "analysis_service.py"
+      },
+      {
+        "type": "代码可读性",
+        "line": 153,
+        "severity": "优化",
+        "description": "代码行过长（130字符）",
+        "suggestion": "建议将长行拆分为多行，推荐不超过80字符",
+        "file": "analysis_service.py"
+      },
+      {
+        "type": "代码可读性",
+        "line": 154,
+        "severity": "优化",
+        "description": "代码行过长（126字符）",
+        "suggestion": "建议将长行拆分为多行，推荐不超过80字符",
+        "file": "analysis_service.py"
+      },
+      {
+        "type": "代码可读性",
+        "line": 190,
+        "severity": "优化",
+        "description": "代码行过长（135字符）",
+        "suggestion": "建议将长行拆分为多行，推荐不超过80字符",
+        "file": "analysis_service.py"
+      },
+      {
+        "type": "代码可读性",
+        "line": 436,
+        "severity": "优化",
+        "description": "代码行过长（121字符）",
+        "suggestion": "建议将长行拆分为多行，推荐不超过80字符",
+        "file": "analysis_service.py"
+      },
+      {
+        "type": "代码可读性",
+        "line": 231,
+        "severity": "优化",
+        "description": "函数 _build_score_factors 过长（75行）",
+        "suggestion": "建议将函数拆分为更小的子函数",
+        "file": "analysis_service.py"
+      },
+      {
+        "type": "代码可读性",
+        "line": 40,
+        "severity": "优化",
+        "description": "代码行过长（122字符）",
+        "suggestion": "建议将长行拆分为多行，推荐不超过80字符",
+        "file": "concept_registry.py"
+      },
+      {
+        "type": "代码可读性",
+        "line": 54,
+        "severity": "优化",
+        "description": "代码行过长（122字符）",
+        "suggestion": "建议将长行拆分为多行，推荐不超过80字符",
+        "file": "models.py"
+      },
+      {
+        "type": "代码可读性",
+        "line": 68,
+        "severity": "优化",
+        "description": "代码行过长（122字符）",
+        "suggestion": "建议将长行拆分为多行，推荐不超过80字符",
+        "file": "models.py"
+      },
+      {
+        "type": "代码可读性",
+        "line": 92,
+        "severity": "优化",
+        "description": "代码行过长（122字符）",
+        "suggestion": "建议将长行拆分为多行，推荐不超过80字符",
+        "file": "models.py"
+      }
+    ]
+  },
+  "file_details": {
+    "analysis_service.py": {
+      "path": "analysis_service.py",
+      "language": "python",
+      "size_bytes": 23924,
+      "lines": 617,
+      "comment_lines": 0,
+      "issues": [
+        {
+          "type": "代码可读性",
+          "line": 152,
+          "severity": "优化",
+          "description": "代码行过长（121字符）",
+          "suggestion": "建议将长行拆分为多行，推荐不超过80字符",
+          "file": "analysis_service.py"
+        },
+        {
+          "type": "代码可读性",
+          "line": 153,
+          "severity": "优化",
+          "description": "代码行过长（130字符）",
+          "suggestion": "建议将长行拆分为多行，推荐不超过80字符",
+          "file": "analysis_service.py"
+        },
+        {
+          "type": "代码可读性",
+          "line": 154,
+          "severity": "优化",
+          "description": "代码行过长（126字符）",
+          "suggestion": "建议将长行拆分为多行，推荐不超过80字符",
+          "file": "analysis_service.py"
+        },
+        {
+          "type": "代码可读性",
+          "line": 190,
+          "severity": "优化",
+          "description": "代码行过长（135字符）",
+          "suggestion": "建议将长行拆分为多行，推荐不超过80字符",
+          "file": "analysis_service.py"
+        },
+        {
+          "type": "代码可读性",
+          "line": 436,
+          "severity": "优化",
+          "description": "代码行过长（121字符）",
+          "suggestion": "建议将长行拆分为多行，推荐不超过80字符",
+          "file": "analysis_service.py"
+        },
+        {
+          "type": "代码可读性",
+          "line": 231,
+          "severity": "优化",
+          "description": "函数 _build_score_factors 过长（75行）",
+          "suggestion": "建议将函数拆分为更小的子函数",
+          "file": "analysis_service.py"
+        }
+      ]
+    },
+    "base_data_service.py": {
+      "path": "base_data_service.py",
+      "language": "python",
+      "size_bytes": 6524,
+      "lines": 176,
+      "comment_lines": 0,
+      "issues": [
+        {
+          "type": "潜在Bug",
+          "line": 119,
+          "severity": "一般",
+          "description": "可能存在空指针风险：missing",
+          "suggestion": "显式检查变量是否为None",
+          "file": "base_data_service.py"
+        }
+      ]
+    },
+    "concept_registry.py": {
+      "path": "concept_registry.py",
+      "language": "python",
+      "size_bytes": 8056,
+      "lines": 113,
+      "comment_lines": 0,
+      "issues": [
+        {
+          "type": "代码可读性",
+          "line": 40,
+          "severity": "优化",
+          "description": "代码行过长（122字符）",
+          "suggestion": "建议将长行拆分为多行，推荐不超过80字符",
+          "file": "concept_registry.py"
+        }
+      ]
+    },
+    "concept_service.py": {
+      "path": "concept_service.py",
+      "language": "python",
+      "size_bytes": 3165,
+      "lines": 87,
+      "comment_lines": 0,
+      "issues": [
+        {
+          "type": "潜在Bug",
+          "line": 37,
+          "severity": "一般",
+          "description": "可能存在空指针风险：changed",
+          "suggestion": "显式检查变量是否为None",
+          "file": "concept_service.py"
+        }
+      ]
+    },
+    "config.py": {
+      "path": "config.py",
+      "language": "python",
+      "size_bytes": 2126,
+      "lines": 58,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "database.py": {
+      "path": "database.py",
+      "language": "python",
+      "size_bytes": 661,
+      "lines": 22,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "import_service.py": {
+      "path": "import_service.py",
+      "language": "python",
+      "size_bytes": 10281,
+      "lines": 288,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "main.py": {
+      "path": "main.py",
+      "language": "python",
+      "size_bytes": 2976,
+      "lines": 90,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "models.py": {
+      "path": "models.py",
+      "language": "python",
+      "size_bytes": 10647,
+      "lines": 197,
+      "comment_lines": 0,
+      "issues": [
+        {
+          "type": "代码可读性",
+          "line": 54,
+          "severity": "优化",
+          "description": "代码行过长（122字符）",
+          "suggestion": "建议将长行拆分为多行，推荐不超过80字符",
+          "file": "models.py"
+        },
+        {
+          "type": "代码可读性",
+          "line": 68,
+          "severity": "优化",
+          "description": "代码行过长（122字符）",
+          "suggestion": "建议将长行拆分为多行，推荐不超过80字符",
+          "file": "models.py"
+        },
+        {
+          "type": "代码可读性",
+          "line": 92,
+          "severity": "优化",
+          "description": "代码行过长（122字符）",
+          "suggestion": "建议将长行拆分为多行，推荐不超过80字符",
+          "file": "models.py"
+        }
+      ]
+    },
+    "services.py": {
+      "path": "services.py",
+      "language": "python",
+      "size_bytes": 1506,
+      "lines": 48,
+      "comment_lines": 0,
+      "issues": [
+        {
+          "type": "潜在Bug",
+          "line": 18,
+          "severity": "一般",
+          "description": "可能存在空指针风险：inserted",
+          "suggestion": "显式检查变量是否为None",
+          "file": "services.py"
+        },
+        {
+          "type": "潜在Bug",
+          "line": 29,
+          "severity": "一般",
+          "description": "可能存在空指针风险：industry_chain",
+          "suggestion": "显式检查变量是否为None",
+          "file": "services.py"
+        },
+        {
+          "type": "潜在Bug",
+          "line": 31,
+          "severity": "一般",
+          "description": "可能存在空指针风险：keyword",
+          "suggestion": "显式检查变量是否为None",
+          "file": "services.py"
+        }
+      ]
+    },
+    "sync_service.py": {
+      "path": "sync_service.py",
+      "language": "python",
+      "size_bytes": 7476,
+      "lines": 188,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "__init__.py": {
+      "path": "__init__.py",
+      "language": "python",
+      "size_bytes": 0,
+      "lines": 1,
+      "comment_lines": 0,
+      "issues": [
+        {
+          "type": "命名规范",
+          "line": 0,
+          "severity": "一般",
+          "description": "Python文件名不符合snake_case规范: __init__.py",
+          "suggestion": "使用小写字母和下划线，如 my_module.py",
+          "file": "__init__.py"
+        }
+      ]
+    },
+    "api\\base_data.py": {
+      "path": "api\\base_data.py",
+      "language": "python",
+      "size_bytes": 2228,
+      "lines": 50,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "api\\fundamentals.py": {
+      "path": "api\\fundamentals.py",
+      "language": "python",
+      "size_bytes": 2235,
+      "lines": 51,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "api\\imports.py": {
+      "path": "api\\imports.py",
+      "language": "python",
+      "size_bytes": 2884,
+      "lines": 74,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "api\\kline.py": {
+      "path": "api\\kline.py",
+      "language": "python",
+      "size_bytes": 1230,
+      "lines": 37,
+      "comment_lines": 0,
+      "issues": [
+        {
+          "type": "潜在Bug",
+          "line": 29,
+          "severity": "一般",
+          "description": "可能存在空指针风险：start",
+          "suggestion": "显式检查变量是否为None",
+          "file": "api\\kline.py"
+        },
+        {
+          "type": "潜在Bug",
+          "line": 31,
+          "severity": "一般",
+          "description": "可能存在空指针风险：end",
+          "suggestion": "显式检查变量是否为None",
+          "file": "api\\kline.py"
+        }
+      ]
+    },
+    "api\\quotes.py": {
+      "path": "api\\quotes.py",
+      "language": "python",
+      "size_bytes": 982,
+      "lines": 26,
+      "comment_lines": 0,
+      "issues": [
+        {
+          "type": "潜在Bug",
+          "line": 20,
+          "severity": "一般",
+          "description": "可能存在空指针风险：codes",
+          "suggestion": "显式检查变量是否为None",
+          "file": "api\\quotes.py"
+        }
+      ]
+    },
+    "api\\stocks.py": {
+      "path": "api\\stocks.py",
+      "language": "python",
+      "size_bytes": 1860,
+      "lines": 40,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "api\\sync_status.py": {
+      "path": "api\\sync_status.py",
+      "language": "python",
+      "size_bytes": 3468,
+      "lines": 83,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "api\\technical.py": {
+      "path": "api\\technical.py",
+      "language": "python",
+      "size_bytes": 785,
+      "lines": 21,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "api\\valuation.py": {
+      "path": "api\\valuation.py",
+      "language": "python",
+      "size_bytes": 766,
+      "lines": 20,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "api\\__init__.py": {
+      "path": "api\\__init__.py",
+      "language": "python",
+      "size_bytes": 0,
+      "lines": 1,
+      "comment_lines": 0,
+      "issues": [
+        {
+          "type": "命名规范",
+          "line": 0,
+          "severity": "一般",
+          "description": "Python文件名不符合snake_case规范: __init__.py",
+          "suggestion": "使用小写字母和下划线，如 my_module.py",
+          "file": "api\\__init__.py"
+        }
+      ]
+    },
+    "data_provider\\akshare_provider.py": {
+      "path": "data_provider\\akshare_provider.py",
+      "language": "python",
+      "size_bytes": 992,
+      "lines": 32,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "data_provider\\base.py": {
+      "path": "data_provider\\base.py",
+      "language": "python",
+      "size_bytes": 1235,
+      "lines": 57,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "data_provider\\eastmoney_provider.py": {
+      "path": "data_provider\\eastmoney_provider.py",
+      "language": "python",
+      "size_bytes": 3301,
+      "lines": 91,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "data_provider\\failover_manager.py": {
+      "path": "data_provider\\failover_manager.py",
+      "language": "python",
+      "size_bytes": 3006,
+      "lines": 84,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "data_provider\\registry.py": {
+      "path": "data_provider\\registry.py",
+      "language": "python",
+      "size_bytes": 885,
+      "lines": 28,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "data_provider\\sina_provider.py": {
+      "path": "data_provider\\sina_provider.py",
+      "language": "python",
+      "size_bytes": 3853,
+      "lines": 104,
+      "comment_lines": 0,
+      "issues": [
+        {
+          "type": "潜在Bug",
+          "line": 37,
+          "severity": "一般",
+          "description": "可能存在空指针风险：start",
+          "suggestion": "显式检查变量是否为None",
+          "file": "data_provider\\sina_provider.py"
+        },
+        {
+          "type": "潜在Bug",
+          "line": 39,
+          "severity": "一般",
+          "description": "可能存在空指针风险：end",
+          "suggestion": "显式检查变量是否为None",
+          "file": "data_provider\\sina_provider.py"
+        }
+      ]
+    },
+    "data_provider\\utils.py": {
+      "path": "data_provider\\utils.py",
+      "language": "python",
+      "size_bytes": 1001,
+      "lines": 41,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "data_provider\\__init__.py": {
+      "path": "data_provider\\__init__.py",
+      "language": "python",
+      "size_bytes": 0,
+      "lines": 1,
+      "comment_lines": 0,
+      "issues": [
+        {
+          "type": "命名规范",
+          "line": 0,
+          "severity": "一般",
+          "description": "Python文件名不符合snake_case规范: __init__.py",
+          "suggestion": "使用小写字母和下划线，如 my_module.py",
+          "file": "data_provider\\__init__.py"
+        }
+      ]
+    },
+    "init_data\\analysis_seed.py": {
+      "path": "init_data\\analysis_seed.py",
+      "language": "python",
+      "size_bytes": 4976,
+      "lines": 127,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "init_data\\stock_list.py": {
+      "path": "init_data\\stock_list.py",
+      "language": "python",
+      "size_bytes": 7459,
+      "lines": 201,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "init_data\\__init__.py": {
+      "path": "init_data\\__init__.py",
+      "language": "python",
+      "size_bytes": 0,
+      "lines": 1,
+      "comment_lines": 0,
+      "issues": [
+        {
+          "type": "命名规范",
+          "line": 0,
+          "severity": "一般",
+          "description": "Python文件名不符合snake_case规范: __init__.py",
+          "suggestion": "使用小写字母和下划线，如 my_module.py",
+          "file": "init_data\\__init__.py"
+        }
+      ]
+    },
+    "schemas\\analysis.py": {
+      "path": "schemas\\analysis.py",
+      "language": "python",
+      "size_bytes": 3635,
+      "lines": 143,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "schemas\\base_data.py": {
+      "path": "schemas\\base_data.py",
+      "language": "python",
+      "size_bytes": 566,
+      "lines": 26,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "schemas\\common.py": {
+      "path": "schemas\\common.py",
+      "language": "python",
+      "size_bytes": 547,
+      "lines": 30,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "schemas\\importing.py": {
+      "path": "schemas\\importing.py",
+      "language": "python",
+      "size_bytes": 2015,
+      "lines": 75,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "schemas\\market.py": {
+      "path": "schemas\\market.py",
+      "language": "python",
+      "size_bytes": 1683,
+      "lines": 74,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "schemas\\stock.py": {
+      "path": "schemas\\stock.py",
+      "language": "python",
+      "size_bytes": 492,
+      "lines": 23,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "schemas\\__init__.py": {
+      "path": "schemas\\__init__.py",
+      "language": "python",
+      "size_bytes": 0,
+      "lines": 1,
+      "comment_lines": 0,
+      "issues": [
+        {
+          "type": "命名规范",
+          "line": 0,
+          "severity": "一般",
+          "description": "Python文件名不符合snake_case规范: __init__.py",
+          "suggestion": "使用小写字母和下划线，如 my_module.py",
+          "file": "schemas\\__init__.py"
+        }
+      ]
+    },
+    "sync\\progress.py": {
+      "path": "sync\\progress.py",
+      "language": "python",
+      "size_bytes": 1783,
+      "lines": 63,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "sync\\scheduler.py": {
+      "path": "sync\\scheduler.py",
+      "language": "python",
+      "size_bytes": 1669,
+      "lines": 65,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "sync\\sync_tasks.py": {
+      "path": "sync\\sync_tasks.py",
+      "language": "python",
+      "size_bytes": 692,
+      "lines": 20,
+      "comment_lines": 0,
+      "issues": []
+    },
+    "sync\\__init__.py": {
+      "path": "sync\\__init__.py",
+      "language": "python",
+      "size_bytes": 0,
+      "lines": 1,
+      "comment_lines": 0,
+      "issues": [
+        {
+          "type": "命名规范",
+          "line": 0,
+          "severity": "一般",
+          "description": "Python文件名不符合snake_case规范: __init__.py",
+          "suggestion": "使用小写字母和下划线，如 my_module.py",
+          "file": "sync\\__init__.py"
+        }
+      ]
+    }
+  },
+  "statistics": {
+    "total_lines": 3576,
+    "comment_lines": 0,
+    "comment_coverage": 0.0
+  }
+}
