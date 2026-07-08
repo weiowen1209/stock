@@ -345,6 +345,7 @@ const candidateFacts = ref<CandidateFact[]>([])
 const evidenceItems = ref<EvidenceItem[]>([])
 const selectedCandidateId = ref<number | null>(null)
 const factDomainFilter = ref('all')
+let previewRequestToken = 0
 
 type EditableFinancialKey =
   | 'code'
@@ -674,10 +675,17 @@ function formatSourceType(type: string) {
 }
 
 function formatConfidence(value: string | number | null | undefined) {
-  if (value === null || value === undefined || value === '') return '置信度 -'
+  const confidence = normalizeConfidencePercent(value)
+  if (confidence === null) return '置信度 -'
+  return `置信度 ${confidence.toFixed(0)}%`
+}
+
+function normalizeConfidencePercent(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === '') return null
   const numeric = Number(value)
-  if (Number.isNaN(numeric)) return `置信度 ${value}`
-  return `置信度 ${numeric.toFixed(0)}%`
+  if (Number.isNaN(numeric)) return null
+  if (numeric >= 0 && numeric <= 1) return numeric * 100
+  return numeric
 }
 
 function factRiskLevel(fact: CandidateFact): RiskLevel {
@@ -693,12 +701,13 @@ function formatRiskLabel(level: RiskLevel) {
 }
 
 function isLowConfidence(fact: CandidateFact) {
-  const confidence = Number(fact.confidence)
-  return fact.trust_level !== 'A' || Number.isNaN(confidence) || confidence < 80
+  const confidence = normalizeConfidencePercent(fact.confidence)
+  return confidence !== null && confidence < 80
 }
 
 function isHighTrustFact(fact: CandidateFact) {
-  return fact.review_status === 'pending' && fact.trust_level === 'A' && !fact.conflict_group && Number(fact.confidence) >= 80 && fact.metric_value !== null && fact.metric_value !== ''
+  const confidence = normalizeConfidencePercent(fact.confidence)
+  return fact.review_status === 'pending' && fact.trust_level === 'A' && !fact.conflict_group && confidence !== null && confidence >= 80 && fact.metric_value !== null && fact.metric_value !== ''
 }
 
 function trustLevelClass(level: string) {
@@ -708,9 +717,10 @@ function trustLevelClass(level: string) {
 }
 
 function confidenceClass(value: string | number | null | undefined) {
-  const numeric = Number(value)
-  if (Number.isNaN(numeric) || numeric < 70) return 'import-workbench-debug__tag import-workbench-debug__tag--danger'
-  if (numeric < 85) return 'import-workbench-debug__tag import-workbench-debug__tag--warning'
+  const confidence = normalizeConfidencePercent(value)
+  if (confidence === null) return 'import-workbench-debug__tag'
+  if (confidence < 70) return 'import-workbench-debug__tag import-workbench-debug__tag--danger'
+  if (confidence < 85) return 'import-workbench-debug__tag import-workbench-debug__tag--warning'
   return 'import-workbench-debug__tag import-workbench-debug__tag--success'
 }
 
@@ -804,37 +814,49 @@ async function loadDocuments() {
   }
 }
 
-async function loadFactEvidence(batchId: number) {
+function isCurrentFactEvidenceRequest(batchId: number, requestToken: number) {
+  return requestToken === previewRequestToken && selectedPreview.value?.batch.id === batchId
+}
+
+async function loadFactEvidence(batchId: number, requestToken = previewRequestToken) {
   factEvidenceLoading.value = true
   try {
     const [factsResponse, evidenceResponse] = await Promise.all([
       api.getCandidateFacts({ batch_id: batchId }),
       api.getEvidenceItems({ batch_id: batchId })
     ])
+    if (!isCurrentFactEvidenceRequest(batchId, requestToken)) return
     candidateFacts.value = factsResponse.data ?? []
     evidenceItems.value = evidenceResponse.data ?? []
     selectedCandidateId.value = candidateFacts.value[0]?.id ?? null
   } catch (error) {
+    if (!isCurrentFactEvidenceRequest(batchId, requestToken)) return
     candidateFacts.value = selectedPreview.value?.candidate_facts ?? []
     evidenceItems.value = []
     selectedCandidateId.value = candidateFacts.value[0]?.id ?? null
     const message = error instanceof Error ? error.message : '候选事实和证据加载失败'
     ElMessage.error(message)
   } finally {
-    factEvidenceLoading.value = false
+    if (isCurrentFactEvidenceRequest(batchId, requestToken)) {
+      factEvidenceLoading.value = false
+    }
   }
 }
 
 async function loadPreview(documentId: number) {
+  const requestToken = ++previewRequestToken
   selectedDocumentId.value = documentId
   previewLoading.value = true
+  factEvidenceLoading.value = false
   try {
     const response = await api.getReportDocumentPreview(documentId)
+    if (requestToken !== previewRequestToken || selectedDocumentId.value !== documentId) return
     selectedPreview.value = response.data
     if (response.data?.batch.id) {
-      await loadFactEvidence(response.data.batch.id)
+      await loadFactEvidence(response.data.batch.id, requestToken)
     }
   } catch (error) {
+    if (requestToken !== previewRequestToken || selectedDocumentId.value !== documentId) return
     selectedPreview.value = null
     candidateFacts.value = []
     evidenceItems.value = []
@@ -842,7 +864,9 @@ async function loadPreview(documentId: number) {
     const message = error instanceof Error ? error.message : '解析预览加载失败'
     ElMessage.error(message)
   } finally {
-    previewLoading.value = false
+    if (requestToken === previewRequestToken && selectedDocumentId.value === documentId) {
+      previewLoading.value = false
+    }
   }
 }
 
@@ -864,9 +888,10 @@ async function handleUploadSubmit() {
       throw new Error('上传接口未返回解析结果')
     }
     uploadResult.value = response.data
+    const requestToken = ++previewRequestToken
     selectedDocumentId.value = response.data.document.id
     selectedPreview.value = response.data.preview
-    await Promise.all([loadDocuments(), loadFactEvidence(response.data.preview.batch.id)])
+    await Promise.all([loadDocuments(), loadFactEvidence(response.data.preview.batch.id, requestToken)])
     ElMessage.success(uploadResult.value.is_duplicate ? 'PDF 已存在，已返回最新解析结果' : 'PDF 上传并解析成功')
   } catch (error) {
     const message = error instanceof Error ? error.message : 'PDF 上传失败'
