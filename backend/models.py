@@ -292,7 +292,7 @@ class CandidateFact(Base, TimestampMixin):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    batch_id: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
+    batch_id: Mapped[int] = mapped_column(Integer, nullable=False)
     document_id: Mapped[int] = mapped_column(Integer, nullable=True)
     parse_job_id: Mapped[int] = mapped_column(Integer, nullable=True)
     code: Mapped[str] = mapped_column(String(10), index=True, nullable=False)

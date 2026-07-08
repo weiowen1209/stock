@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel
@@ -55,7 +55,7 @@ class EvidenceItemRead(OrmModel):
     source_type: str
     source_title: str | None = None
     source_url: str | None = None
-    source_date: datetime | None = None
+    source_date: date | None = None
     collected_at: datetime
     document_id: int | None = None
     batch_id: int | None = None
