@@ -3,6 +3,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_session
+from backend.fact_service import list_candidate_facts, list_confirmed_facts, list_evidence_items
 from backend.import_service import (
     confirm_import,
     create_manual_preview,
@@ -18,8 +19,11 @@ from backend.import_service import (
 )
 from backend.schemas.common import ApiResponse, ResponseMeta
 from backend.schemas.importing import (
+    CandidateFactRead,
     ConfirmImportRequest,
     ConfirmImportResult,
+    ConfirmedFactRead,
+    EvidenceItemRead,
     ImportBatchRead,
     ImportPreview,
     ReportDocumentRead,
@@ -157,6 +161,42 @@ async def read_import_batches(session: AsyncSession = Depends(get_session)) -> A
     rows = await list_import_batches(session)
     updated_at = max((row.created_at for row in rows), default=None)
     return ApiResponse(data=rows, meta=ResponseMeta(source="import", updated_at=updated_at, stale=not rows))
+
+
+@router.get("/candidate-facts", response_model=ApiResponse[list[CandidateFactRead]])
+async def read_candidate_facts(
+    batch_id: int | None = None,
+    session: AsyncSession = Depends(get_session),
+) -> ApiResponse[list[CandidateFactRead]]:
+    rows = await list_candidate_facts(session, batch_id=batch_id)
+    updated_at = max((row.updated_at for row in rows), default=None)
+    return ApiResponse(data=rows, meta=ResponseMeta(source="candidate_facts", updated_at=updated_at, stale=not rows))
+
+
+@router.get("/evidence", response_model=ApiResponse[list[EvidenceItemRead]])
+async def read_evidence_items(
+    batch_id: int | None = None,
+    code: str | None = None,
+    session: AsyncSession = Depends(get_session),
+) -> ApiResponse[list[EvidenceItemRead]]:
+    rows = await list_evidence_items(session, batch_id=batch_id)
+    if code is not None:
+        rows = [row for row in rows if row.code == code]
+    updated_at = max((row.updated_at for row in rows), default=None)
+    return ApiResponse(data=rows, meta=ResponseMeta(source="evidence", updated_at=updated_at, stale=not rows))
+
+
+@router.get("/confirmed-facts", response_model=ApiResponse[list[ConfirmedFactRead]])
+async def read_confirmed_facts(
+    code: str | None = None,
+    period: str | None = None,
+    session: AsyncSession = Depends(get_session),
+) -> ApiResponse[list[ConfirmedFactRead]]:
+    rows = await list_confirmed_facts(session, code=code)
+    if period is not None:
+        rows = [row for row in rows if row.period == period]
+    updated_at = max((row.updated_at for row in rows), default=None)
+    return ApiResponse(data=rows, meta=ResponseMeta(source="confirmed_facts", updated_at=updated_at, stale=not rows))
 
 
 @router.get("/{batch_id}", response_model=ApiResponse[ImportBatchRead])

@@ -11,6 +11,7 @@ from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import get_settings
+from backend.fact_service import create_candidate_facts_for_import, list_candidate_facts
 from backend.models import (
     AnnualReportExtraction,
     BusinessSegment,
@@ -160,10 +161,23 @@ async def parse_report_document(
     await session.refresh(document)
     await session.refresh(job)
     await session.refresh(batch)
+    await create_candidate_facts_for_import(
+        session=session,
+        batch=batch,
+        financial=financial,
+        segments=segments,
+        expenses=expenses,
+        extractions=parsed.extractions,
+        field_sources=parsed.field_sources,
+        confidence=confidence,
+        parser_version=job.parser_version,
+    )
+    candidate_facts = await list_candidate_facts(session, batch_id=batch.id)
     return ImportPreview(
         batch=batch,
         financial=financial,
         segments=segments,
+        candidate_facts=candidate_facts,
         expenses=expenses,
         confidence=confidence,
         warnings=warnings,
@@ -188,15 +202,29 @@ async def create_manual_preview(
     session.add(batch)
     await session.commit()
     await session.refresh(batch)
-    return ImportPreview(
+    await create_candidate_facts_for_import(
+        session=session,
         batch=batch,
         financial=payload.financial,
         segments=payload.segments,
         expenses=payload.expenses,
+        extractions=payload.extractions,
+        field_sources={},
+        confidence=Decimal("1.00"),
+        parser_version="manual-v1",
+    )
+    candidate_facts = await list_candidate_facts(session, batch_id=batch.id)
+    await session.commit()
+    return ImportPreview(
+        batch=batch,
+        financial=payload.financial,
+        segments=payload.segments,
+        candidate_facts=candidate_facts,
+        expenses=payload.expenses,
         confidence=Decimal("1.00"),
         warnings=[],
         field_sources={},
-        extractions=None,
+        extractions=payload.extractions,
     )
 
 
@@ -286,10 +314,12 @@ async def get_latest_document_preview(session: AsyncSession, document_id: int) -
     batch = batch_result.scalar_one_or_none()
     if batch is None:
         return None
+    candidate_facts = await list_candidate_facts(session, batch_id=batch.id)
     return ImportPreview(
         batch=batch,
         financial=ManualFinancialInput.model_validate_json(parse_result.financial_json),
         segments=[SegmentInput.model_validate(item) for item in json.loads(parse_result.segments_json)],
+        candidate_facts=candidate_facts,
         expenses=ExpenseInput.model_validate_json(parse_result.expenses_json) if parse_result.expenses_json else None,
         confidence=job.confidence if job and job.confidence is not None else Decimal("0"),
         warnings=json.loads(job.warnings) if job and job.warnings else [],
