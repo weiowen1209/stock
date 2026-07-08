@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import asc, select
+from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models import CandidateFact, ConfirmedFact, EvidenceItem, ImportBatch
@@ -186,6 +187,78 @@ async def list_confirmed_facts(
         stmt = stmt.where(ConfirmedFact.period == period)
     result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+async def confirm_facts_for_import(
+    session: AsyncSession,
+    batch: ImportBatch,
+    financial: ManualFinancialInput,
+    segments: list[SegmentInput],
+    expenses: ExpenseInput | None,
+    extractions: ReportExtractions | None,
+) -> int:
+    candidates = await list_candidate_facts(session, batch_id=batch.id)
+    candidate_by_identity = {
+        _identity(item.metric_key, item.dimension, item.dimension_value): item for item in candidates
+    }
+    confirmed_count = 0
+    expected_identities: set[tuple[str, str, str]] = set()
+
+    for metric in _build_metrics(financial, segments, expenses, extractions):
+        identity = _identity(metric.metric_key, metric.dimension, metric.dimension_value)
+        expected_identities.add(identity)
+        candidate = candidate_by_identity.get(identity)
+        stmt = insert(ConfirmedFact).values(
+            code=financial.code,
+            period=financial.report_period,
+            period_type=_period_type(financial.report_period),
+            fact_type=metric.fact_type,
+            metric_name=metric.metric_name,
+            metric_key=metric.metric_key,
+            metric_value=metric.value,
+            metric_unit=metric.unit,
+            dimension=metric.dimension,
+            dimension_value=metric.dimension_value,
+            evidence_id=candidate.evidence_id if candidate else None,
+            evidence_ids_json=candidate.evidence_ids_json if candidate else None,
+            source_type=_source_type(batch),
+            trust_level="A",
+            review_status="confirmed",
+            candidate_fact_id=candidate.id if candidate else None,
+            import_id=batch.id,
+        )
+        await session.execute(
+            stmt.on_conflict_do_update(
+                index_elements=["code", "period", "fact_type", "metric_key", "dimension", "dimension_value"],
+                set_={
+                    "metric_name": stmt.excluded.metric_name,
+                    "metric_value": stmt.excluded.metric_value,
+                    "metric_unit": stmt.excluded.metric_unit,
+                    "evidence_id": stmt.excluded.evidence_id,
+                    "evidence_ids_json": stmt.excluded.evidence_ids_json,
+                    "source_type": stmt.excluded.source_type,
+                    "trust_level": stmt.excluded.trust_level,
+                    "review_status": stmt.excluded.review_status,
+                    "candidate_fact_id": stmt.excluded.candidate_fact_id,
+                    "import_id": stmt.excluded.import_id,
+                    "updated_at": stmt.excluded.updated_at,
+                },
+            )
+        )
+        if candidate:
+            candidate.review_status = "confirmed"
+        confirmed_count += 1
+
+    for candidate in candidates:
+        if _identity(candidate.metric_key, candidate.dimension, candidate.dimension_value) not in expected_identities:
+            candidate.review_status = "rejected"
+
+    await session.flush()
+    return confirmed_count
+
+
+def _identity(metric_key: str, dimension: str, dimension_value: str) -> tuple[str, str, str]:
+    return (metric_key, dimension or "", dimension_value or "")
 
 
 async def _clear_pending_candidates(session: AsyncSession, batch_id: int) -> None:

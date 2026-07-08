@@ -6,12 +6,12 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from sqlalchemy import desc, select
+from sqlalchemy import case, desc, select
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import get_settings
-from backend.fact_service import create_candidate_facts_for_import, list_candidate_facts
+from backend.fact_service import confirm_facts_for_import, create_candidate_facts_for_import, list_candidate_facts
 from backend.models import (
     AnnualReportExtraction,
     BusinessSegment,
@@ -239,6 +239,14 @@ async def confirm_import(
     segment_records = await _upsert_segments(session, batch_id, payload.financial, payload.segments)
     expense_records = await _upsert_expenses(session, batch_id, payload.financial, payload.expenses)
     extraction_records = await _upsert_extractions(session, batch_id, batch, payload.financial, payload.extractions)
+    confirmed_fact_records = await confirm_facts_for_import(
+        session=session,
+        batch=batch,
+        financial=payload.financial,
+        segments=payload.segments,
+        expenses=payload.expenses,
+        extractions=payload.extractions,
+    )
     batch.status = "confirmed"
     batch.confirmed_at = datetime.now()
     batch.code = payload.financial.code
@@ -259,6 +267,8 @@ async def confirm_import(
         segment_records=segment_records,
         expense_records=expense_records,
         extraction_records=extraction_records,
+        candidate_records=len(await list_candidate_facts(session, batch_id=batch.id)),
+        confirmed_fact_records=confirmed_fact_records,
     )
 
 
@@ -463,6 +473,16 @@ def _preview_summary(financial: ManualFinancialInput) -> dict[str, str | None]:
     }
 
 
+def _preserve_existing_on_null(model, stmt, fields: list[str]) -> dict[str, object]:
+    return {
+        field: case(
+            (getattr(stmt.excluded, field).is_not(None), getattr(stmt.excluded, field)),
+            else_=getattr(model, field),
+        )
+        for field in fields
+    }
+
+
 async def _upsert_financial(
     session: AsyncSession, batch_id: int, financial: ManualFinancialInput
 ) -> int:
@@ -484,11 +504,18 @@ async def _upsert_financial(
         import_id=batch_id,
         review_status="confirmed",
     )
-    update_fields = {key: getattr(stmt.excluded, key) for key in [
+    nullable_fields = [
         "report_date", "revenue", "gross_profit", "gross_margin", "net_profit",
         "operating_cash_flow", "total_assets", "net_assets", "eps", "roe", "rd_ratio",
-        "source", "import_id", "review_status"
-    ]}
+    ]
+    update_fields = _preserve_existing_on_null(FinancialReport, stmt, nullable_fields)
+    update_fields.update(
+        {
+            "source": stmt.excluded.source,
+            "import_id": stmt.excluded.import_id,
+            "review_status": stmt.excluded.review_status,
+        }
+    )
     await session.execute(stmt.on_conflict_do_update(index_elements=["code", "report_period"], set_=update_fields))
     return 1
 
@@ -515,10 +542,15 @@ async def _upsert_segments(
             import_id=batch_id,
             review_status="confirmed",
         )
-        update_fields = {key: getattr(stmt.excluded, key) for key in [
-            "revenue", "cost", "gross_profit", "gross_margin", "revenue_yoy",
-            "source", "import_id", "review_status"
-        ]}
+        nullable_fields = ["revenue", "cost", "gross_profit", "gross_margin", "revenue_yoy"]
+        update_fields = _preserve_existing_on_null(BusinessSegment, stmt, nullable_fields)
+        update_fields.update(
+            {
+                "source": stmt.excluded.source,
+                "import_id": stmt.excluded.import_id,
+                "review_status": stmt.excluded.review_status,
+            }
+        )
         await session.execute(
             stmt.on_conflict_do_update(
                 index_elements=["code", "report_period", "segment_type", "segment_name"],
@@ -547,9 +579,14 @@ async def _upsert_expenses(
         source="import",
         import_id=batch_id,
     )
-    update_fields = {key: getattr(stmt.excluded, key) for key in [
-        "selling_expense", "admin_expense", "rd_expense", "finance_expense", "source", "import_id"
-    ]}
+    nullable_fields = ["selling_expense", "admin_expense", "rd_expense", "finance_expense"]
+    update_fields = _preserve_existing_on_null(ExpenseItem, stmt, nullable_fields)
+    update_fields.update(
+        {
+            "source": stmt.excluded.source,
+            "import_id": stmt.excluded.import_id,
+        }
+    )
     await session.execute(stmt.on_conflict_do_update(index_elements=["code", "report_period"], set_=update_fields))
     return 1
 
@@ -571,42 +608,44 @@ async def _upsert_extractions(
         document_id=batch.document_id,
         import_id=batch_id,
         **values,
-        notes_json=json.dumps(notes, ensure_ascii=False),
+        notes_json=json.dumps(notes, ensure_ascii=False) if notes else None,
         source="import",
         review_status="confirmed",
     )
-    update_fields = {
-        key: getattr(stmt.excluded, key)
-        for key in [
-            "document_id",
-            "import_id",
-            "operating_profit",
-            "total_profit",
-            "non_recurring_net_profit",
-            "income_tax_expense",
-            "minority_interest",
-            "other_income",
-            "investment_income",
-            "fair_value_change_income",
-            "credit_impairment_loss",
-            "asset_impairment_loss",
-            "asset_disposal_income",
-            "cash_received_from_sales",
-            "cash_received_other_operating",
-            "inventory_total",
-            "inventory_impairment",
-            "capital_reserve",
-            "total_share_capital",
-            "rd_investment",
-            "rd_investment_ratio",
-            "patent_count",
-            "invention_patent_count",
-            "construction_in_progress",
-            "notes_json",
-            "source",
-            "review_status",
-        ]
-    }
+    nullable_fields = [
+        "document_id",
+        "operating_profit",
+        "total_profit",
+        "non_recurring_net_profit",
+        "income_tax_expense",
+        "minority_interest",
+        "other_income",
+        "investment_income",
+        "fair_value_change_income",
+        "credit_impairment_loss",
+        "asset_impairment_loss",
+        "asset_disposal_income",
+        "cash_received_from_sales",
+        "cash_received_other_operating",
+        "inventory_total",
+        "inventory_impairment",
+        "capital_reserve",
+        "total_share_capital",
+        "rd_investment",
+        "rd_investment_ratio",
+        "patent_count",
+        "invention_patent_count",
+        "construction_in_progress",
+        "notes_json",
+    ]
+    update_fields = _preserve_existing_on_null(AnnualReportExtraction, stmt, nullable_fields)
+    update_fields.update(
+        {
+            "import_id": stmt.excluded.import_id,
+            "source": stmt.excluded.source,
+            "review_status": stmt.excluded.review_status,
+        }
+    )
     await session.execute(stmt.on_conflict_do_update(index_elements=["code", "report_period"], set_=update_fields))
     return 1
 

@@ -3,15 +3,15 @@ from decimal import Decimal
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 
 from backend import import_service
 from backend.database import AsyncSessionLocal, init_db
 from backend.fact_service import create_candidate_facts_for_import, list_candidate_facts, list_evidence_items
+from backend.import_service import confirm_import, create_manual_preview
 from backend.main import app
-from backend.models import CandidateFact, ConfirmedFact
-from backend.models import ImportBatch
+from backend.models import CandidateFact, ConfirmedFact, FinancialReport, ImportBatch
 from backend.schemas.importing import ConfirmImportRequest, EvidenceItemRead, ManualFinancialInput, SegmentInput
 
 
@@ -421,6 +421,121 @@ async def test_document_preview_returns_saved_candidate_facts():
 
     assert preview.status_code == 200
     assert any(item["metric_key"] == "revenue" for item in preview.json()["data"]["candidate_facts"])
+
+
+@pytest.mark.asyncio
+async def test_confirm_import_materializes_confirmed_facts():
+    await init_db()
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            text(
+                """
+                DELETE FROM confirmed_facts
+                WHERE code = '688017'
+                AND period = '2025年报'
+                """
+            )
+        )
+        preview = await create_manual_preview(
+            session,
+            ConfirmImportRequest(
+                financial=ManualFinancialInput(
+                    code="688017",
+                    report_period="2025年报",
+                    revenue=Decimal("570714025.26"),
+                    net_profit=Decimal("124366913.57"),
+                ),
+                segments=[],
+                expenses=None,
+                extractions=None,
+            ),
+        )
+        result = await confirm_import(
+            session,
+            preview.batch.id,
+            ConfirmImportRequest(
+                financial=preview.financial,
+                segments=[],
+                expenses=None,
+                extractions=None,
+            ),
+        )
+        confirmed = await session.execute(
+            select(ConfirmedFact).where(
+                ConfirmedFact.code == "688017",
+                ConfirmedFact.period == "2025年报",
+            )
+        )
+
+    rows = list(confirmed.scalars().all())
+    assert result.confirmed_fact_records == 2
+    assert result.candidate_records == 2
+    assert {row.metric_key for row in rows} == {"revenue", "net_profit"}
+    assert all(row.review_status == "confirmed" for row in rows)
+    assert all(row.import_id == preview.batch.id for row in rows)
+
+
+@pytest.mark.asyncio
+async def test_confirm_import_does_not_overwrite_legacy_values_with_nulls():
+    await init_db()
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            text(
+                """
+                DELETE FROM financial_reports
+                WHERE code = '688017'
+                AND report_period = '2025年报'
+                """
+            )
+        )
+        session.add(
+            FinancialReport(
+                code="688017",
+                report_period="2025年报",
+                revenue=Decimal("100.00"),
+                net_profit=Decimal("50.00"),
+                source="seed",
+                review_status="confirmed",
+            )
+        )
+        await session.commit()
+
+        preview = await create_manual_preview(
+            session,
+            ConfirmImportRequest(
+                financial=ManualFinancialInput(
+                    code="688017",
+                    report_period="2025年报",
+                    revenue=None,
+                    net_profit=Decimal("60.00"),
+                ),
+                segments=[],
+                expenses=None,
+                extractions=None,
+            ),
+        )
+        await confirm_import(
+            session,
+            preview.batch.id,
+            ConfirmImportRequest(
+                financial=preview.financial,
+                segments=[],
+                expenses=None,
+                extractions=None,
+            ),
+        )
+        report = await session.execute(
+            select(FinancialReport).where(
+                FinancialReport.code == "688017",
+                FinancialReport.report_period == "2025年报",
+            )
+        )
+
+    row = report.scalar_one()
+    assert row.revenue == Decimal("100.00")
+    assert row.net_profit == Decimal("60.00")
 
 
 def _confirmed_fact() -> ConfirmedFact:
