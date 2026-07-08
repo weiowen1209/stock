@@ -179,9 +179,7 @@ async def read_evidence_items(
     code: str | None = None,
     session: AsyncSession = Depends(get_session),
 ) -> ApiResponse[list[EvidenceItemRead]]:
-    rows = await list_evidence_items(session, batch_id=batch_id)
-    if code is not None:
-        rows = [row for row in rows if row.code == code]
+    rows = await list_evidence_items(session, batch_id=batch_id, code=code)
     updated_at = max((row.updated_at for row in rows), default=None)
     return ApiResponse(data=rows, meta=ResponseMeta(source="evidence", updated_at=updated_at, stale=not rows))
 
@@ -192,9 +190,7 @@ async def read_confirmed_facts(
     period: str | None = None,
     session: AsyncSession = Depends(get_session),
 ) -> ApiResponse[list[ConfirmedFactRead]]:
-    rows = await list_confirmed_facts(session, code=code)
-    if period is not None:
-        rows = [row for row in rows if row.period == period]
+    rows = await list_confirmed_facts(session, code=code, period=period)
     updated_at = max((row.updated_at for row in rows), default=None)
     return ApiResponse(data=rows, meta=ResponseMeta(source="confirmed_facts", updated_at=updated_at, stale=not rows))
 

@@ -160,18 +160,30 @@ async def list_candidate_facts(session: AsyncSession, batch_id: int | None = Non
     return list(result.scalars().all())
 
 
-async def list_evidence_items(session: AsyncSession, batch_id: int | None = None) -> list[EvidenceItem]:
+async def list_evidence_items(
+    session: AsyncSession,
+    batch_id: int | None = None,
+    code: str | None = None,
+) -> list[EvidenceItem]:
     stmt = select(EvidenceItem).order_by(asc(EvidenceItem.id))
     if batch_id is not None:
         stmt = stmt.where(EvidenceItem.batch_id == batch_id)
+    if code is not None:
+        stmt = stmt.where(EvidenceItem.code == code)
     result = await session.execute(stmt)
     return list(result.scalars().all())
 
 
-async def list_confirmed_facts(session: AsyncSession, code: str | None = None) -> list[ConfirmedFact]:
+async def list_confirmed_facts(
+    session: AsyncSession,
+    code: str | None = None,
+    period: str | None = None,
+) -> list[ConfirmedFact]:
     stmt = select(ConfirmedFact).order_by(asc(ConfirmedFact.id))
     if code is not None:
         stmt = stmt.where(ConfirmedFact.code == code)
+    if period is not None:
+        stmt = stmt.where(ConfirmedFact.period == period)
     result = await session.execute(stmt)
     return list(result.scalars().all())
 

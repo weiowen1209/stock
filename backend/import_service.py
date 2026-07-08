@@ -200,7 +200,7 @@ async def create_manual_preview(
         summary=json.dumps(_preview_summary(payload.financial), ensure_ascii=False),
     )
     session.add(batch)
-    await session.commit()
+    await session.flush()
     await session.refresh(batch)
     await create_candidate_facts_for_import(
         session=session,
@@ -215,6 +215,7 @@ async def create_manual_preview(
     )
     candidate_facts = await list_candidate_facts(session, batch_id=batch.id)
     await session.commit()
+    await session.refresh(batch)
     return ImportPreview(
         batch=batch,
         financial=payload.financial,

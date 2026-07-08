@@ -6,12 +6,13 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
+from backend import import_service
 from backend.database import AsyncSessionLocal, init_db
 from backend.fact_service import create_candidate_facts_for_import, list_candidate_facts, list_evidence_items
 from backend.main import app
 from backend.models import CandidateFact, ConfirmedFact
 from backend.models import ImportBatch
-from backend.schemas.importing import EvidenceItemRead, ManualFinancialInput, SegmentInput
+from backend.schemas.importing import ConfirmImportRequest, EvidenceItemRead, ManualFinancialInput, SegmentInput
 
 
 @pytest.mark.asyncio
@@ -320,6 +321,106 @@ async def test_upload_preview_returns_candidate_facts_and_list_endpoint():
     assert any(item["metric_key"] == "revenue" for item in listed.json()["data"])
     assert evidence.status_code == 200
     assert any(item["snippet"] for item in evidence.json()["data"])
+
+
+@pytest.mark.asyncio
+async def test_manual_preview_rolls_back_batch_when_candidate_creation_fails(monkeypatch):
+    await init_db()
+    code = "TSTTX3"
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(text("DELETE FROM import_batches WHERE code = :code"), {"code": code})
+        await session.commit()
+
+    async def fail_candidate_creation(**kwargs):
+        raise RuntimeError("candidate creation failed")
+
+    monkeypatch.setattr(import_service, "create_candidate_facts_for_import", fail_candidate_creation)
+    payload = ConfirmImportRequest(
+        financial=ManualFinancialInput(
+            code=code,
+            report_period="2025年报",
+            revenue=Decimal("123.45"),
+        ),
+        segments=[],
+        expenses=None,
+        extractions=None,
+    )
+
+    async with AsyncSessionLocal() as session:
+        with pytest.raises(RuntimeError, match="candidate creation failed"):
+            await import_service.create_manual_preview(session, payload)
+        await session.rollback()
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(text("SELECT COUNT(*) FROM import_batches WHERE code = :code"), {"code": code})
+
+    assert result.scalar_one() == 0
+
+
+@pytest.mark.asyncio
+async def test_manual_preview_api_returns_candidate_facts_with_manual_source():
+    await init_db()
+    transport = ASGITransport(app=app)
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/imports/manual",
+            json={
+                "financial": {
+                    "code": "688018",
+                    "report_period": "2025年报",
+                    "revenue": "123.45",
+                },
+                "segments": [],
+                "expenses": None,
+                "extractions": None,
+            },
+        )
+
+    assert response.status_code == 200
+    candidate_facts = response.json()["data"]["candidate_facts"]
+    assert candidate_facts
+    assert candidate_facts[0]["source_type"] == "manual_note"
+
+
+@pytest.mark.asyncio
+async def test_confirmed_facts_static_route_accepts_period_filter():
+    await init_db()
+    transport = ASGITransport(app=app)
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/api/imports/confirmed-facts?period=不存在的报告期-任务3")
+
+    assert response.status_code == 200
+    assert response.json()["data"] == []
+
+
+@pytest.mark.asyncio
+async def test_document_preview_returns_saved_candidate_facts():
+    await init_db()
+    text = """
+证券代码：688019
+2025年度报告
+合并利润表
+项目 2025年度 2024年度 单位：元
+营业收入 570,714,025.26 500,000,000.00
+""".encode("utf-8")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        upload = await client.post(
+            "/api/imports/documents/upload",
+            files={"file": ("saved-preview-report.txt", text, "text/plain")},
+            data={"code": "688019", "report_period": "2025年报"},
+        )
+        assert upload.status_code == 200
+        document_id = upload.json()["data"]["document"]["id"]
+
+        preview = await client.get(f"/api/imports/documents/{document_id}/preview")
+
+    assert preview.status_code == 200
+    assert any(item["metric_key"] == "revenue" for item in preview.json()["data"]["candidate_facts"])
 
 
 def _confirmed_fact() -> ConfirmedFact:
