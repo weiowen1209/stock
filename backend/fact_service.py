@@ -208,6 +208,7 @@ async def confirm_facts_for_import(
         identity = _identity(metric.metric_key, metric.dimension, metric.dimension_value)
         expected_identities.add(identity)
         candidate = candidate_by_identity.get(identity)
+        confirmed_dimension = _confirmed_dimension(metric)
         stmt = insert(ConfirmedFact).values(
             code=financial.code,
             period=financial.report_period,
@@ -217,7 +218,7 @@ async def confirm_facts_for_import(
             metric_key=metric.metric_key,
             metric_value=metric.value,
             metric_unit=metric.unit,
-            dimension=metric.dimension,
+            dimension=confirmed_dimension,
             dimension_value=metric.dimension_value,
             evidence_id=candidate.evidence_id if candidate else None,
             evidence_ids_json=candidate.evidence_ids_json if candidate else None,
@@ -268,6 +269,12 @@ async def confirm_facts_for_import(
 
 def _identity(metric_key: str, dimension: str, dimension_value: str) -> tuple[str, str, str]:
     return (metric_key, dimension or "", dimension_value or "")
+
+
+def _confirmed_dimension(metric: FactMetric) -> str:
+    if metric.fact_type == "segment":
+        return "segment"
+    return metric.dimension
 
 
 async def _clear_pending_candidates(session: AsyncSession, batch_id: int) -> None:

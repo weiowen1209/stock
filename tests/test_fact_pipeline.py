@@ -12,8 +12,15 @@ from backend.database import AsyncSessionLocal, init_db
 from backend.fact_service import create_candidate_facts_for_import, list_candidate_facts, list_evidence_items
 from backend.import_service import confirm_import, create_manual_preview
 from backend.main import app
-from backend.models import CandidateFact, ConfirmedFact, FinancialReport, ImportBatch
-from backend.schemas.importing import ConfirmImportRequest, EvidenceItemRead, ManualFinancialInput, SegmentInput
+from backend.models import AnnualReportExtraction, CandidateFact, ConfirmedFact, FinancialReport, ImportBatch
+from backend.schemas.importing import (
+    ConfirmImportRequest,
+    EvidenceItemRead,
+    ExpenseInput,
+    ManualFinancialInput,
+    ReportExtractions,
+    SegmentInput,
+)
 
 
 @pytest.mark.asyncio
@@ -478,6 +485,76 @@ async def test_confirm_import_materializes_confirmed_facts():
 
 
 @pytest.mark.asyncio
+async def test_confirm_import_materializes_non_financial_confirmed_facts():
+    await init_db()
+    code = "TSTCFX1"
+    period = "2099年报"
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            text(
+                """
+                DELETE FROM confirmed_facts
+                WHERE code = :code
+                AND period = :period
+                """
+            ),
+            {"code": code, "period": period},
+        )
+        preview = await create_manual_preview(
+            session,
+            ConfirmImportRequest(
+                financial=ManualFinancialInput(code=code, report_period=period),
+                segments=[
+                    SegmentInput(
+                        segment_name="机器人",
+                        revenue=Decimal("10.00"),
+                        gross_margin=Decimal("20.00"),
+                    )
+                ],
+                expenses=ExpenseInput(rd_expense=Decimal("30.00")),
+                extractions=ReportExtractions(operating_profit=Decimal("40.00")),
+            ),
+        )
+        result = await confirm_import(
+            session,
+            preview.batch.id,
+            ConfirmImportRequest(
+                financial=preview.financial,
+                segments=preview.segments,
+                expenses=preview.expenses,
+                extractions=preview.extractions,
+            ),
+        )
+        confirmed = await session.execute(
+            select(ConfirmedFact).where(
+                ConfirmedFact.code == code,
+                ConfirmedFact.period == period,
+            )
+        )
+
+    facts_by_key = {row.metric_key: row for row in confirmed.scalars().all()}
+    assert result.confirmed_fact_records == 4
+    assert result.candidate_records == 4
+    assert set(facts_by_key) == {
+        "segment_revenue",
+        "segment_gross_margin",
+        "rd_expense",
+        "operating_profit",
+    }
+    assert facts_by_key["segment_revenue"].fact_type == "segment"
+    assert facts_by_key["segment_revenue"].dimension == "segment"
+    assert facts_by_key["segment_revenue"].dimension_value == "机器人"
+    assert facts_by_key["segment_gross_margin"].fact_type == "segment"
+    assert facts_by_key["segment_gross_margin"].dimension == "segment"
+    assert facts_by_key["segment_gross_margin"].dimension_value == "机器人"
+    assert facts_by_key["rd_expense"].fact_type == "profit_impact"
+    assert facts_by_key["rd_expense"].dimension == ""
+    assert facts_by_key["operating_profit"].fact_type == "profit_impact"
+    assert facts_by_key["operating_profit"].dimension == ""
+
+
+@pytest.mark.asyncio
 async def test_confirm_import_does_not_overwrite_legacy_values_with_nulls():
     await init_db()
 
@@ -635,6 +712,9 @@ async def test_confirm_import_preserves_existing_fact_provenance_when_batch_has_
         original_evidence_id = first_fact.evidence_id
         original_evidence_ids_json = first_fact.evidence_ids_json
         original_candidate_fact_id = first_fact.candidate_fact_id
+        assert original_evidence_id is not None
+        assert original_evidence_ids_json is not None
+        assert original_candidate_fact_id is not None
 
         second_preview = await create_manual_preview(
             session,
@@ -740,6 +820,73 @@ async def test_confirm_import_refreshes_financial_report_updated_at_on_conflict(
 
     assert report.revenue == Decimal("200.00")
     assert report.updated_at > old_updated_at
+
+
+@pytest.mark.asyncio
+async def test_confirm_import_refreshes_extraction_updated_at_and_preserves_null_fields():
+    await init_db()
+    code = "TSTXUP1"
+    period = "2099年报"
+    old_updated_at = datetime(2000, 1, 1, 0, 0, 0)
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            text(
+                """
+                DELETE FROM annual_report_extractions
+                WHERE code = :code
+                AND report_period = :period
+                """
+            ),
+            {"code": code, "period": period},
+        )
+        session.add(
+            AnnualReportExtraction(
+                code=code,
+                report_period=period,
+                operating_profit=Decimal("100.00"),
+                rd_investment=Decimal("500.00"),
+                source="seed",
+                review_status="confirmed",
+                updated_at=old_updated_at,
+            )
+        )
+        await session.commit()
+
+        preview = await create_manual_preview(
+            session,
+            ConfirmImportRequest(
+                financial=ManualFinancialInput(code=code, report_period=period),
+                segments=[],
+                expenses=None,
+                extractions=ReportExtractions(
+                    operating_profit=Decimal("200.00"),
+                    rd_investment=None,
+                ),
+            ),
+        )
+        await confirm_import(
+            session,
+            preview.batch.id,
+            ConfirmImportRequest(
+                financial=preview.financial,
+                segments=[],
+                expenses=None,
+                extractions=preview.extractions,
+            ),
+        )
+        extraction = (
+            await session.execute(
+                select(AnnualReportExtraction).where(
+                    AnnualReportExtraction.code == code,
+                    AnnualReportExtraction.report_period == period,
+                )
+            )
+        ).scalar_one()
+
+    assert extraction.operating_profit == Decimal("200.00")
+    assert extraction.rd_investment == Decimal("500.00")
+    assert extraction.updated_at > old_updated_at
 
 
 def _confirmed_fact() -> ConfirmedFact:
