@@ -88,7 +88,7 @@ async def create_candidate_facts_for_import(
     if batch.id is None:
         await session.flush()
 
-    await _delete_pending_candidate_facts(session, batch.id)
+    await _clear_pending_candidates(session, batch.id)
     source_type = _source_type(batch)
     period_type = _period_type(financial.report_period or batch.report_period)
     count = 0
@@ -176,14 +176,29 @@ async def list_confirmed_facts(session: AsyncSession, code: str | None = None) -
     return list(result.scalars().all())
 
 
-async def _delete_pending_candidate_facts(session: AsyncSession, batch_id: int) -> None:
+async def _clear_pending_candidates(session: AsyncSession, batch_id: int) -> None:
     result = await session.execute(
         select(CandidateFact).where(
             CandidateFact.batch_id == batch_id,
             CandidateFact.review_status == "pending",
         )
     )
-    for item in result.scalars().all():
+    pending_candidates = list(result.scalars().all())
+    evidence_ids = [item.evidence_id for item in pending_candidates if item.evidence_id is not None]
+    for item in pending_candidates:
+        await session.delete(item)
+    await session.flush()
+    if not evidence_ids:
+        return
+
+    evidence_result = await session.execute(
+        select(EvidenceItem).where(
+            EvidenceItem.batch_id == batch_id,
+            EvidenceItem.review_status == "pending",
+            EvidenceItem.id.in_(evidence_ids),
+        )
+    )
+    for item in evidence_result.scalars().all():
         await session.delete(item)
     await session.flush()
 
@@ -260,6 +275,8 @@ def _evidence_snippet(metric: FactMetric, field_source: dict[str, str | None]) -
     line = field_source.get("line")
     if line:
         return line
+    if metric.dimension:
+        return f"{metric.metric_name}[{metric.dimension}={metric.dimension_value}]: {metric.value}"
     return f"{metric.metric_name}: {metric.value}"
 
 

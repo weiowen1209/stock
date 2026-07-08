@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal
 
 import pytest
@@ -5,7 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from backend.database import AsyncSessionLocal, init_db
-from backend.fact_service import create_candidate_facts_for_import, list_candidate_facts
+from backend.fact_service import create_candidate_facts_for_import, list_candidate_facts, list_evidence_items
 from backend.models import CandidateFact, ConfirmedFact
 from backend.models import ImportBatch
 from backend.schemas.importing import EvidenceItemRead, ManualFinancialInput, SegmentInput
@@ -152,6 +153,7 @@ async def test_create_candidate_facts_for_import_links_evidence():
         )
         await session.commit()
         facts = await list_candidate_facts(session, batch_id=batch.id)
+        evidence = await list_evidence_items(session, batch_id=batch.id)
 
     assert created_count == 1
     assert len(facts) == 1
@@ -161,10 +163,13 @@ async def test_create_candidate_facts_for_import_links_evidence():
     assert facts[0].metric_value == Decimal("570714025.2600")
     assert facts[0].metric_unit == "元"
     assert facts[0].source_type == "annual_report"
+    assert facts[0].period_type == "annual"
     assert facts[0].trust_level == "A"
     assert facts[0].dimension == ""
     assert facts[0].dimension_value == ""
     assert facts[0].evidence_id is not None
+    assert json.loads(facts[0].evidence_ids_json) == [facts[0].evidence_id]
+    assert [item.id for item in evidence] == [facts[0].evidence_id]
 
 
 @pytest.mark.asyncio
@@ -198,11 +203,88 @@ async def test_segment_candidate_facts_keep_dimensions_distinct():
         )
         await session.commit()
         facts = await list_candidate_facts(session, batch_id=batch.id)
+        evidence = await list_evidence_items(session, batch_id=batch.id)
 
     assert created_count == 2
     assert [fact.metric_key for fact in facts] == ["segment_revenue", "segment_revenue"]
     assert {fact.dimension for fact in facts} == {"product"}
     assert {fact.dimension_value for fact in facts} == {"谐波减速器", "机电一体化产品"}
+    assert {item.snippet for item in evidence} == {
+        "分部收入[product=谐波减速器]: 100.00",
+        "分部收入[product=机电一体化产品]: 200.00",
+    }
+
+
+@pytest.mark.asyncio
+async def test_create_candidate_facts_for_import_replaces_pending_candidates_and_evidence():
+    await init_db()
+
+    async with AsyncSessionLocal() as session:
+        batch = ImportBatch(
+            import_type="pdf",
+            file_name="report.txt",
+            code="688017",
+            report_period="2025年报",
+            status="parsed",
+        )
+        session.add(batch)
+        await session.flush()
+
+        first_count = await create_candidate_facts_for_import(
+            session=session,
+            batch=batch,
+            financial=ManualFinancialInput(
+                code="688017",
+                report_period="2025年报",
+                revenue=Decimal("100.00"),
+            ),
+            segments=[],
+            expenses=None,
+            extractions=None,
+            field_sources={
+                "revenue": {
+                    "line": "第一次 营业收入 100.00",
+                }
+            },
+            confidence=Decimal("0.80"),
+            parser_version="financial-table-v1",
+        )
+        first_facts = await list_candidate_facts(session, batch_id=batch.id)
+        first_evidence = await list_evidence_items(session, batch_id=batch.id)
+
+        second_count = await create_candidate_facts_for_import(
+            session=session,
+            batch=batch,
+            financial=ManualFinancialInput(
+                code="688017",
+                report_period="2025年报",
+                revenue=Decimal("200.00"),
+            ),
+            segments=[],
+            expenses=None,
+            extractions=None,
+            field_sources={
+                "revenue": {
+                    "line": "第二次 营业收入 200.00",
+                }
+            },
+            confidence=Decimal("0.90"),
+            parser_version="financial-table-v1",
+        )
+        await session.commit()
+        facts = await list_candidate_facts(session, batch_id=batch.id)
+        evidence = await list_evidence_items(session, batch_id=batch.id)
+
+    assert first_count == 1
+    assert len(first_facts) == 1
+    assert len(first_evidence) == 1
+    assert second_count == 1
+    assert len(facts) == 1
+    assert len(evidence) == 1
+    assert facts[0].metric_value == Decimal("200.0000")
+    assert facts[0].evidence_id == evidence[0].id
+    assert json.loads(facts[0].evidence_ids_json) == [evidence[0].id]
+    assert evidence[0].snippet == "第二次 营业收入 200.00"
 
 
 def _confirmed_fact() -> ConfirmedFact:
