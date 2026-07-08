@@ -44,6 +44,37 @@ class ExpenseItemRead(OrmModel):
     source: str | None = None
 
 
+class AnnualReportExtractionRead(OrmModel):
+    code: str
+    report_period: str
+    document_id: int | None = None
+    operating_profit: Decimal | None = None
+    total_profit: Decimal | None = None
+    non_recurring_net_profit: Decimal | None = None
+    income_tax_expense: Decimal | None = None
+    minority_interest: Decimal | None = None
+    other_income: Decimal | None = None
+    investment_income: Decimal | None = None
+    fair_value_change_income: Decimal | None = None
+    credit_impairment_loss: Decimal | None = None
+    asset_impairment_loss: Decimal | None = None
+    asset_disposal_income: Decimal | None = None
+    cash_received_from_sales: Decimal | None = None
+    cash_received_other_operating: Decimal | None = None
+    inventory_total: Decimal | None = None
+    inventory_impairment: Decimal | None = None
+    capital_reserve: Decimal | None = None
+    total_share_capital: Decimal | None = None
+    rd_investment: Decimal | None = None
+    rd_investment_ratio: Decimal | None = None
+    patent_count: Decimal | None = None
+    invention_patent_count: Decimal | None = None
+    construction_in_progress: Decimal | None = None
+    notes: dict[str, str] = {}
+    source: str | None = None
+    review_status: str
+
+
 class ValuationRead(OrmModel):
     date: date
     pe: Decimal | None = None
@@ -113,6 +144,40 @@ class AiInsight(OrmModel):
     watch_items: list[str]
 
 
+class FundamentalModule(OrmModel):
+    title: str
+    summary: str
+    key_points: list[str]
+    status: str = "neutral"
+
+
+class ImpactFactor(OrmModel):
+    name: str
+    category: str
+    impact: float | None = None
+    direction: str
+    explanation: str
+
+
+class SegmentContributionItem(OrmModel):
+    report_period: str
+    segment_type: str
+    segment_name: str
+    revenue: float | None = None
+    gross_profit: float | None = None
+    gross_margin: float | None = None
+    revenue_yoy: float | None = None
+    gross_profit_share: float | None = None
+    role: str
+
+
+class WatchSignal(OrmModel):
+    name: str
+    value: str
+    judgement: str
+    source: str
+
+
 class DeepFundamentalAnalysis(OrmModel):
     code: str
     report_period: str | None = None
@@ -126,6 +191,10 @@ class DeepFundamentalAnalysis(OrmModel):
     peer_comparison: list[PeerComparisonItem]
     valuation_percentiles: list[ValuationPercentile]
     ai_insight: AiInsight
+    analysis_modules: list[FundamentalModule] = []
+    impact_factors: list[ImpactFactor] = []
+    segment_contribution: list[SegmentContributionItem] = []
+    watch_signals: list[WatchSignal] = []
 
 
 class TechnicalIndicators(OrmModel):

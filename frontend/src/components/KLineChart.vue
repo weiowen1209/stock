@@ -20,7 +20,7 @@
       </div>
     </div>
     <v-chart v-if="filteredItems.length" class="chart" :option="option" autoresize />
-    <div v-else class="empty-chart">{{ items.length ? '当前日期范围暂无K线数据' : '暂无K线数据，请先同步当前股票' }}</div>
+    <div v-else class="empty-chart">{{ items.length ? '当前日期范围暂无K线数据' : '暂无K线数据，请先发起股票同步' }}</div>
   </section>
 </template>
 

@@ -77,6 +77,7 @@ class RealtimeQuote(Base):
     turnover: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
     market_cap: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
     source: Mapped[str] = mapped_column(String(30), nullable=True)
+    source_updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 
 
@@ -140,6 +141,43 @@ class ExpenseItem(Base):
     finance_expense: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
     source: Mapped[str] = mapped_column(String(30), nullable=True)
     import_id: Mapped[int] = mapped_column(Integer, nullable=True)
+
+
+class AnnualReportExtraction(Base):
+    __tablename__ = "annual_report_extractions"
+    __table_args__ = (UniqueConstraint("code", "report_period", name="uq_extraction_code_period"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(10), index=True, nullable=False)
+    report_period: Mapped[str] = mapped_column(String(20), nullable=False)
+    document_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    import_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    operating_profit: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
+    total_profit: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
+    non_recurring_net_profit: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
+    income_tax_expense: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
+    minority_interest: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
+    other_income: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
+    investment_income: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
+    fair_value_change_income: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
+    credit_impairment_loss: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
+    asset_impairment_loss: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
+    asset_disposal_income: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
+    cash_received_from_sales: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
+    cash_received_other_operating: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
+    inventory_total: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
+    inventory_impairment: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
+    capital_reserve: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
+    total_share_capital: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
+    rd_investment: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
+    rd_investment_ratio: Mapped[Decimal] = mapped_column(Numeric(8, 2), nullable=True)
+    patent_count: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
+    invention_patent_count: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
+    construction_in_progress: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=True)
+    notes_json: Mapped[str] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(String(30), nullable=True)
+    review_status: Mapped[str] = mapped_column(String(20), default="confirmed", nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 
 
 class ValuationMetric(Base):
@@ -212,6 +250,7 @@ class ReportParseResult(Base):
     segments_json: Mapped[str] = mapped_column(Text, nullable=False)
     expenses_json: Mapped[str] = mapped_column(Text, nullable=True)
     field_sources_json: Mapped[str] = mapped_column(Text, nullable=True)
+    extractions_json: Mapped[str] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
 

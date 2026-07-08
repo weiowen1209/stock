@@ -66,11 +66,11 @@ def test_gitignore_excludes_local_runtime_artifacts():
 def test_import_workbench_surfaces_upload_failures():
     content = (ROOT / "frontend" / "src" / "views" / "ImportWorkbench.vue").read_text(encoding="utf-8")
     required_phrases = [
-        "catch (err)",
+        "catch (error)",
         "ElMessage.error",
-        "生成预览失败",
-        "PDF文件已选择",
-        "预览已生成",
+        "PDF 上传失败",
+        "上传完成",
+        "api.uploadReportDocument",
     ]
     missing = [phrase for phrase in required_phrases if phrase not in content]
     assert missing == []
@@ -82,7 +82,7 @@ def test_base_data_page_and_concept_discovery_removal_are_wired():
     panel_content = (ROOT / "frontend" / "src" / "components" / "DataStatusPanel.vue").read_text(encoding="utf-8")
     base_page = ROOT / "frontend" / "src" / "views" / "BaseData.vue"
     assert base_page.exists()
-    assert "基础资料" in app_content
+    assert "股票池" in app_content
     assert "importBaseDataExcel" in api_content
     assert "upsertBaseDataStock" in api_content
     assert "getBaseDataStocks" in api_content

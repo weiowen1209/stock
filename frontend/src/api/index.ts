@@ -1,6 +1,7 @@
 import axios from 'axios'
 import NProgress from 'nprogress'
 import type {
+  AnnualReportExtraction,
   ApiResponse,
   BaseDataImportResult,
   BaseDataStockUpsert,
@@ -16,6 +17,7 @@ import type {
   KLineItem,
   Quote,
   FieldSource,
+  ReportExtractions,
   ReportDocument,
   ReportDocumentUploadResult,
   Stock,
@@ -124,17 +126,22 @@ export const api = {
   getDeepFundamentalAnalysis(code: string) {
     return request<DeepFundamentalAnalysis>(`/api/fundamentals/${code}/deep-analysis`)
   },
+  getAnnualReportExtractions(code: string) {
+    return request<AnnualReportExtraction[]>(`/api/fundamentals/${code}/extractions`)
+  },
   getTechnical(code: string, period = 'day') {
     return request<TechnicalIndicators>(`/api/technical/${code}`, { period })
   },
-  async triggerSync(codes?: string[]) {
+  async triggerSync(codes?: string[], startDate?: string, forceFull?: boolean) {
     const response = await client.post(
       '/api/sync/trigger',
       {
         codes,
         include_quotes: true,
         include_kline: true,
-        periods: ['day', 'week', 'month']
+        periods: ['day', 'week', 'month'],
+        start_date: startDate ?? '2022-01-01',
+        force_full: forceFull ?? false
       },
       { timeout: SYNC_TIMEOUT }
     )
@@ -181,6 +188,7 @@ export const api = {
 }
 
 export type {
+  AnnualReportExtraction,
   BaseDataImportResult,
   BaseDataStockUpsert,
   BusinessSegment,
@@ -195,6 +203,7 @@ export type {
   KLineItem,
   Quote,
   FieldSource,
+  ReportExtractions,
   ReportDocument,
   ReportDocumentUploadResult,
   Stock,

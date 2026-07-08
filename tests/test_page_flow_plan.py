@@ -88,18 +88,18 @@ async def test_tc01_homepage_initialization_and_global_status_contract():
     for phrase in [
         "机器人产业分析仪表板",
         "DataStatusPanel",
-        "基础资料",
+        "股票池",
         "产业链总览",
         "基本面深度分析",
         "技术面分析",
         "个股深度档案",
-        "导入工作台",
+        "导入财报",
     ]:
         assert phrase in app_vue
     status_panel = read_frontend("components/DataStatusPanel.vue")
-    assert "同步当前股票" in status_panel
+    assert "同步全部股票池" in status_panel
     assert "发现并同步全量概念股" not in status_panel
-    assert "数据拉取进度" in status_panel
+    assert "股票数据状态" in status_panel
     assert "同步当前股票" not in app_vue
 
 
@@ -123,7 +123,8 @@ async def test_tc02_sync_current_stock_writes_quotes_kline_logs_and_refresh_cont
     sync_payload = sync_response.json()
     assert_unified_response(sync_payload)
     task_types = {item["task_type"] for item in sync_payload["data"]}
-    assert {"realtime", "kline"}.issubset(task_types)
+    assert "realtime" in task_types
+    assert any(item.startswith("kline") for item in task_types)
     assert all(item["status"] in {"success", "fallback"} for item in sync_payload["data"])
 
     quotes_payload = quotes_response.json()
@@ -132,10 +133,10 @@ async def test_tc02_sync_current_stock_writes_quotes_kline_logs_and_refresh_cont
     assert any(item["code"] == "688017" for item in quotes_payload["data"])
     assert any(item["code"] == "688017" for item in kline_payload["data"])
     assert {"latest_logs", "progress"}.issubset(status_payload["data"].keys())
-    assert status_payload["data"]["progress"]["stage"] in {"quotes", "kline", "done"}
+    assert status_payload["data"]["progress"]["stage"] in {"quotes", "kline", "kline_day", "done"}
 
     store_ts = read_frontend("stores/stockStore.ts")
-    for phrase in ["triggerSync([currentCode.value])", "api.getQuotes", "api.getSyncStatus", "loadStockAnalysis(currentCode.value)"]:
+    for phrase in ["syncStockByCode", "api.triggerSync([code], undefined, forceFull)", "api.getQuotes", "api.getSyncStatus", "loadStockAnalysis(currentCode.value)"]:
         assert phrase in store_ts
 
 
@@ -158,7 +159,7 @@ async def test_tc03_industry_overview_filter_selection_and_table_contract():
 
     overview_vue = read_frontend("views/IndustryOverview.vue")
     stock_table_vue = read_frontend("components/StockTable.vue")
-    for phrase in ["产业链雷达", "人形机器人A股股票池", "股票池规模", "产业链环节", "行情记录", "StockTable"]:
+    for phrase in ["产业链雷达", "一级分类", "二级分类", "三级分类", "股票列表", "StockTable"]:
         assert phrase in overview_vue
     for phrase in ["代码", "名称", "产业链", "细分定位", "涨跌幅", "最新价", "@row-click", "emit('select', row.code)"]:
         assert phrase in stock_table_vue
@@ -183,7 +184,7 @@ async def test_tc04_fundamental_analysis_data_and_view_contract():
     assert len(responses[3].json()["data"]) >= 1
 
     fundamental_vue = read_frontend("views/Fundamental.vue")
-    for phrase in ["营业收入", "净利润", "毛利率", "研发费用率", "营收与净利润趋势", "业务分部收入", "费用结构", "估值指标"]:
+    for phrase in ["增长潜力", "财务质量", "估值性价比", "基本面分析八模块", "业务贡献拆解", "收入", "毛利率", "市场定位与估值分位"]:
         assert phrase in fundamental_vue
 
 
@@ -212,7 +213,7 @@ async def test_tc05_technical_analysis_indicator_and_view_contract(monkeypatch):
             assert len(data[key]) == len(data["dates"])
 
     technical_vue = read_frontend("views/Technical.vue")
-    for phrase in ["KLineChart", "技术走势", "均线系统", "MACD", "RSI6"]:
+    for phrase in ["KLineChart", "技术走势", "MACD", "RSI6", "filteredTechnicalSeries"]:
         assert phrase in technical_vue
 
 
@@ -257,7 +258,7 @@ async def test_tc07_import_workbench_upload_preview_and_batch_contract():
     assert any(item["id"] == preview["batch"]["id"] for item in batches_response.json()["data"])
 
     import_vue = read_frontend("views/ImportWorkbench.vue")
-    for phrase in ["请先选择文件", "PDF文件已选择", "预览已生成", "api.uploadImport", "loadBatches"]:
+    for phrase in ["请先选择 PDF 文件", "上传完成", "api.uploadReportDocument", "loadDocuments", "loadPreview"]:
         assert phrase in import_vue
 
 
@@ -307,23 +308,25 @@ async def test_tc08_manual_import_preview_confirm_and_fundamental_refresh_contra
     assert batch["status"] in {"confirmed", "success"}
 
     import_vue = read_frontend("views/ImportWorkbench.vue")
-    for phrase in ["api.createManualImport", "api.confirmImport", "导入已确认入库", "生成手工预览"]:
+    for phrase in ["api.confirmImport", "确认导入完成", "生成手工预览", "核心指标补录"]:
         assert phrase in import_vue
+    assert "api.createManualImport" not in import_vue
 
 
 @pytest.mark.asyncio
-async def test_tc09_import_batches_refresh_table_contract():
+async def test_tc09_report_documents_table_contract():
     async with app.router.lifespan_context(app):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            batches_response = await client.get("/api/imports")
+            documents_response = await client.get("/api/imports/documents")
 
-    assert batches_response.status_code == 200
-    assert_unified_response(batches_response.json())
+    assert documents_response.status_code == 200
+    assert_unified_response(documents_response.json())
 
     import_vue = read_frontend("views/ImportWorkbench.vue")
-    for phrase in ["刷新", "loadBatches", "ID", "类型", "代码", "报告期", "状态", "创建时间"]:
+    for phrase in ["文档资产库", "loadDocuments", "全部文档", "最近上传", "报告期", "状态", "更新时间", "查看预览"]:
         assert phrase in import_vue
+    assert "loadBatches" not in import_vue
 
 
 @pytest.mark.asyncio
@@ -347,5 +350,5 @@ async def test_tc10_empty_data_and_error_fallback_contract():
     import_vue = read_frontend("views/ImportWorkbench.vue")
     for phrase in ["catch (err)", "error.value", "kline.value = []", "technical.value = null"]:
         assert phrase in store_ts
-    for phrase in ["生成预览失败", "确认入库失败", "导入批次加载失败"]:
+    for phrase in ["PDF 上传失败", "确认导入失败", "文档资产库加载失败", "解析预览加载失败"]:
         assert phrase in import_vue

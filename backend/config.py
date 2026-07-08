@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     provider_probe_interval_minutes: int = Field(
         default=30, validation_alias="PROVIDER_PROBE_INTERVAL_MINUTES"
     )
+    sync_concurrency: int = Field(default=6, validation_alias="SYNC_CONCURRENCY")
+    sync_batch_size: int = Field(default=500, validation_alias="SYNC_BATCH_SIZE")
 
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env",

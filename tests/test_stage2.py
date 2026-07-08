@@ -83,9 +83,9 @@ def test_sina_provider_parses_kline_payload():
 def test_provider_registry_prioritizes_stable_real_sources():
     registry = ProviderRegistry()
 
-    assert registry.registered_names() == ["sina", "eastmoney"]
-    assert [provider.name for provider in registry.chain_for("quote")] == ["sina", "eastmoney"]
-    assert [provider.name for provider in registry.chain_for("kline")] == ["sina", "eastmoney"]
+    assert registry.registered_names() == ["sina", "eastmoney", "tencent", "stooq"]
+    assert [provider.name for provider in registry.chain_for("quote")] == ["sina", "eastmoney", "stooq"]
+    assert [provider.name for provider in registry.chain_for("kline")] == ["sina", "eastmoney", "tencent", "stooq"]
     assert isinstance(registry.chain_for("quote")[0], SinaProvider)
 
 

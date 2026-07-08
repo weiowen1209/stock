@@ -3,12 +3,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.analysis_service import (
     calculate_deep_fundamental_analysis,
+    get_annual_report_extractions,
     get_business_segments,
     get_expense_items,
     get_financial_reports,
+    serialize_annual_report_extraction,
 )
 from backend.database import get_session
-from backend.schemas.analysis import BusinessSegmentRead, DeepFundamentalAnalysis, ExpenseItemRead, FinancialReportRead
+from backend.schemas.analysis import AnnualReportExtractionRead, BusinessSegmentRead, DeepFundamentalAnalysis, ExpenseItemRead, FinancialReportRead
 from backend.schemas.common import ApiResponse, ResponseMeta
 
 
@@ -48,3 +50,13 @@ async def read_expenses(
     rows = await get_expense_items(session, code)
     source = rows[-1].source if rows else "sqlite"
     return ApiResponse(data=rows, meta=ResponseMeta(source=source or "sqlite", stale=not rows))
+
+
+@router.get("/{code}/extractions", response_model=ApiResponse[list[AnnualReportExtractionRead]])
+async def read_annual_report_extractions(
+    code: str, session: AsyncSession = Depends(get_session)
+) -> ApiResponse[list[AnnualReportExtractionRead]]:
+    rows = await get_annual_report_extractions(session, code)
+    source = rows[-1].source if rows else "sqlite"
+    data = [serialize_annual_report_extraction(row) for row in rows]
+    return ApiResponse(data=data, meta=ResponseMeta(source=source or "sqlite", stale=not rows))

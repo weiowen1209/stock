@@ -1,19 +1,24 @@
+import json
 from decimal import Decimal
 from statistics import median
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.models import BusinessSegment, ExpenseItem, FinancialReport, KLineData, Stock, ValuationMetric
+from backend.models import AnnualReportExtraction, BusinessSegment, ExpenseItem, FinancialReport, KLineData, Stock, ValuationMetric
 from backend.schemas.analysis import (
     AiInsight,
     DeepFundamentalAnalysis,
     DupontAnalysis,
+    FundamentalModule,
+    ImpactFactor,
     PeerComparisonItem,
     ScoreFactor,
+    SegmentContributionItem,
     TechnicalIndicators,
     TrendBreakdownItem,
     ValuationPercentile,
+    WatchSignal,
 )
 
 
@@ -49,11 +54,57 @@ async def get_valuation_metrics(session: AsyncSession, code: str) -> list[Valuat
     return list(result.scalars().all())
 
 
+async def get_annual_report_extractions(session: AsyncSession, code: str) -> list[AnnualReportExtraction]:
+    result = await session.execute(
+        select(AnnualReportExtraction)
+        .where(AnnualReportExtraction.code == code)
+        .order_by(AnnualReportExtraction.report_period)
+    )
+    return list(result.scalars().all())
+
+
+def serialize_annual_report_extraction(row: AnnualReportExtraction) -> dict[str, object]:
+    data = {
+        "code": row.code,
+        "report_period": row.report_period,
+        "document_id": row.document_id,
+        "operating_profit": row.operating_profit,
+        "total_profit": row.total_profit,
+        "non_recurring_net_profit": row.non_recurring_net_profit,
+        "income_tax_expense": row.income_tax_expense,
+        "minority_interest": row.minority_interest,
+        "other_income": row.other_income,
+        "investment_income": row.investment_income,
+        "fair_value_change_income": row.fair_value_change_income,
+        "credit_impairment_loss": row.credit_impairment_loss,
+        "asset_impairment_loss": row.asset_impairment_loss,
+        "asset_disposal_income": row.asset_disposal_income,
+        "cash_received_from_sales": row.cash_received_from_sales,
+        "cash_received_other_operating": row.cash_received_other_operating,
+        "inventory_total": row.inventory_total,
+        "inventory_impairment": row.inventory_impairment,
+        "capital_reserve": row.capital_reserve,
+        "total_share_capital": row.total_share_capital,
+        "rd_investment": row.rd_investment,
+        "rd_investment_ratio": row.rd_investment_ratio,
+        "patent_count": row.patent_count,
+        "invention_patent_count": row.invention_patent_count,
+        "construction_in_progress": row.construction_in_progress,
+        "notes": _extraction_notes(row),
+        "source": row.source,
+        "review_status": row.review_status,
+    }
+    return data
+
+
 async def calculate_deep_fundamental_analysis(
     session: AsyncSession, code: str
 ) -> DeepFundamentalAnalysis:
     reports = await get_financial_reports(session, code)
     valuations = await get_valuation_metrics(session, code)
+    segments = await get_business_segments(session, code)
+    expenses = await get_expense_items(session, code)
+    extractions = await get_annual_report_extractions(session, code)
     stock = await _get_stock(session, code)
     peer_reports = await _get_peer_latest_reports(session, stock)
 
@@ -62,6 +113,8 @@ async def calculate_deep_fundamental_analysis(
     peer_comparison = _build_peer_comparison(reports[-1] if reports else None, peer_reports)
     valuation_percentiles = _build_valuation_percentiles(valuations)
     score_factors = _build_score_factors(reports, trend_breakdown, peer_comparison, valuation_percentiles)
+    segment_contribution = _build_segment_contribution(segments)
+    impact_factors = _build_impact_factors(reports, expenses, segments)
 
     quality_score = _weighted_score(score_factors, {"profitability", "cash", "leverage"})
     growth_score = _weighted_score(score_factors, {"growth", "margin_trend", "peer_growth"})
@@ -81,6 +134,12 @@ async def calculate_deep_fundamental_analysis(
         peer_comparison=peer_comparison,
         valuation_percentiles=valuation_percentiles,
         ai_insight=_build_ai_insight(overall_score, growth_score, quality_score, valuation_score, score_factors),
+        analysis_modules=_build_analysis_modules(
+            reports, segment_contribution, impact_factors, valuation_percentiles, stock, extractions
+        ),
+        impact_factors=impact_factors,
+        segment_contribution=segment_contribution,
+        watch_signals=_build_watch_signals(reports, segment_contribution, impact_factors, valuation_percentiles),
     )
 
 
@@ -327,6 +386,278 @@ def _score_factor(
     )
 
 
+def _build_segment_contribution(segments: list[BusinessSegment]) -> list[SegmentContributionItem]:
+    latest_period = _latest_period([item.report_period for item in segments])
+    latest_segments = [item for item in segments if item.report_period == latest_period]
+    profit_total_by_type: dict[str, float] = {}
+    for item in latest_segments:
+        if item.gross_profit is not None:
+            profit_total_by_type[item.segment_type] = profit_total_by_type.get(item.segment_type, 0.0) + float(item.gross_profit)
+
+    output: list[SegmentContributionItem] = []
+    for item in latest_segments:
+        gross_profit = _to_float(item.gross_profit)
+        total_profit = profit_total_by_type.get(item.segment_type)
+        share = round(gross_profit / total_profit * 100, 2) if gross_profit is not None and total_profit else None
+        output.append(
+            SegmentContributionItem(
+                report_period=item.report_period,
+                segment_type=item.segment_type,
+                segment_name=item.segment_name,
+                revenue=_to_float(item.revenue),
+                gross_profit=gross_profit,
+                gross_margin=_to_float(item.gross_margin),
+                revenue_yoy=_to_float(item.revenue_yoy),
+                gross_profit_share=share,
+                role=_segment_role(item.segment_type, share, _to_float(item.gross_margin)),
+            )
+        )
+    return sorted(output, key=lambda item: item.gross_profit_share or 0, reverse=True)
+
+
+def _build_impact_factors(
+    reports: list[FinancialReport], expenses: list[ExpenseItem], segments: list[BusinessSegment]
+) -> list[ImpactFactor]:
+    if len(reports) < 2:
+        return []
+    latest = reports[-1]
+    previous = reports[-2]
+    latest_expense = _match_period_item(expenses, latest.report_period)
+    previous_expense = _match_period_item(expenses, previous.report_period)
+    latest_segments = [item for item in segments if item.report_period == latest.report_period]
+    previous_segments = [item for item in segments if item.report_period == previous.report_period]
+
+    revenue_delta = _delta(latest.revenue, previous.revenue)
+    gross_profit_delta = _delta(latest.gross_profit, previous.gross_profit)
+    net_profit_delta = _delta(latest.net_profit, previous.net_profit)
+    factors = [
+        _impact("收入规模变化", "业务增长", revenue_delta, "收入变化直接决定利润池规模"),
+        _impact("毛利额变化", "毛利贡献", gross_profit_delta, "毛利额代表主营业务对利润的直接贡献"),
+        _impact(
+            "毛利率变化",
+            "毛利贡献",
+            _delta(latest.gross_margin, previous.gross_margin),
+            "毛利率变化反映产品结构、价格和成本压力",
+        ),
+        _impact("净利润变化", "最终结果", net_profit_delta, "归母净利润是所有经营和非经常因素的综合结果"),
+    ]
+    if latest_expense and previous_expense:
+        factors.extend(
+            [
+                _impact(
+                    "销售费用变化",
+                    "费用影响",
+                    _neg_delta(latest_expense.selling_expense, previous_expense.selling_expense),
+                    "费用增加会压低净利润，费用下降会释放利润",
+                ),
+                _impact(
+                    "管理费用变化",
+                    "费用影响",
+                    _neg_delta(latest_expense.admin_expense, previous_expense.admin_expense),
+                    "管理费用体现组织和运营成本变化",
+                ),
+                _impact(
+                    "研发费用变化",
+                    "技术投入",
+                    _neg_delta(latest_expense.rd_expense, previous_expense.rd_expense),
+                    "研发费用短期压低利润，长期支撑技术壁垒",
+                ),
+                _impact(
+                    "财务费用变化",
+                    "费用影响",
+                    _neg_delta(latest_expense.finance_expense, previous_expense.finance_expense),
+                    "财务费用体现利息、汇兑和资金成本影响",
+                ),
+            ]
+        )
+    factors.extend(_segment_impact_factors(latest_segments, previous_segments))
+    return sorted(factors, key=lambda item: abs(item.impact or 0), reverse=True)
+
+
+def _segment_impact_factors(
+    latest_segments: list[BusinessSegment], previous_segments: list[BusinessSegment]
+) -> list[ImpactFactor]:
+    previous_by_key = {(item.segment_type, item.segment_name): item for item in previous_segments}
+    factors: list[ImpactFactor] = []
+    for item in latest_segments:
+        previous = previous_by_key.get((item.segment_type, item.segment_name))
+        if previous is None:
+            continue
+        factors.append(
+            _impact(
+                f"{item.segment_name}毛利额变化",
+                "业务分部",
+                _delta(item.gross_profit, previous.gross_profit),
+                f"{item.segment_name}贡献变化用于判断主营业务结构是否改善",
+            )
+        )
+    return factors
+
+
+def _build_analysis_modules(
+    reports: list[FinancialReport],
+    segments: list[SegmentContributionItem],
+    impacts: list[ImpactFactor],
+    valuations: list[ValuationPercentile],
+    stock: Stock | None,
+    extractions: list[AnnualReportExtraction],
+) -> list[FundamentalModule]:
+    latest = reports[-1] if reports else None
+    latest_extraction = _latest_extraction(extractions)
+    top_segment = segments[0] if segments else None
+    top_impacts = impacts[:3]
+    valuation_text = "; ".join(f"{item.metric}{item.label}" for item in valuations[:2]) or "估值样本不足"
+    industry = stock.industry_chain if stock and stock.industry_chain else "机器人产业链"
+    return [
+        FundamentalModule(
+            title="产业逻辑入口",
+            summary=f"从{industry}出发，先判断行业空间和国产替代逻辑，再回到公司兑现能力。",
+            key_points=[
+                f"核心产品：{stock.core_products}" if stock and stock.core_products else "需要补充核心产品标签",
+                "重点跟踪机器人、精密传动和国产替代需求是否继续放量",
+            ],
+            status="positive" if latest and (latest.revenue or 0) > 0 else "neutral",
+        ),
+        FundamentalModule(
+            title="公司业务结构",
+            summary="按产品、行业、地区、销售模式拆开看，避免不同口径混加。",
+            key_points=[
+                f"最新主贡献：{top_segment.segment_name}，毛利占比{_format_percent(top_segment.gross_profit_share)}"
+                if top_segment
+                else "暂无业务分部数据",
+                "产品口径用于判断利润来源，地区口径用于观察内外需结构",
+            ],
+            status="positive" if top_segment else "neutral",
+        ),
+        FundamentalModule(
+            title="毛利与业务贡献拆解",
+            summary="用收入、成本、毛利额和毛利率解释主营业务对利润变化的贡献。",
+            key_points=[item.explanation for item in top_impacts if item.category in {"毛利贡献", "业务分部"}][:3]
+            or ["需要更多分部毛利和成本数据"],
+            status="positive" if any((item.impact or 0) > 0 for item in impacts if item.category == "毛利贡献") else "neutral",
+        ),
+        FundamentalModule(
+            title="净利润影响因素排序",
+            summary="将收入、毛利、费用和分部变化统一放入影响因素列表，按绝对影响额排序。",
+            key_points=[f"{item.name}：{_format_money(item.impact)}，{item.explanation}" for item in top_impacts]
+            or ["至少需要两期财报才能计算影响因素"],
+            status="neutral",
+        ),
+        FundamentalModule(
+            title="经营质量与现金流验证",
+            summary=_cash_quality_summary(latest),
+            key_points=["经营现金流需要持续匹配净利润", "若利润增长但现金流偏弱，需要核对应收、存货和回款"],
+            status="positive" if latest and (_safe_ratio(latest.operating_cash_flow, latest.net_profit) or 0) >= 0.8 else "warning",
+        ),
+        FundamentalModule(
+            title="资产负债与股本扩张潜力",
+            summary=_leverage_summary(latest),
+            key_points=[
+                f"资本公积：{_format_money(_to_float(latest_extraction.capital_reserve))}" if latest_extraction else "资本公积待确认",
+                f"股本：{_format_money(_to_float(latest_extraction.total_share_capital))}" if latest_extraction else "股本待确认",
+                "结合募投项目和资本公积判断后续扩张潜力",
+            ],
+            status="neutral",
+        ),
+        FundamentalModule(
+            title="技术护城河与产能兑现",
+            summary="研发投入、专利、国家标准和产能项目共同构成技术壁垒证据链。",
+            key_points=[
+                f"研发费用率：{_format_percent(_to_float(latest.rd_ratio))}" if latest else "暂无研发费用率",
+                f"研发投入：{_format_money(_to_float(latest_extraction.rd_investment))}" if latest_extraction else "研发投入待确认",
+                f"专利/发明专利：{_format_count(latest_extraction.patent_count)} / {_format_count(latest_extraction.invention_patent_count)}" if latest_extraction else "专利数据待确认",
+                _note_or_default(latest_extraction, "standards", "国家标准线索待确认"),
+                _note_or_default(latest_extraction, "capacity_project", "产能项目线索待确认"),
+            ],
+            status="positive" if latest_extraction and (latest_extraction.rd_investment or latest_extraction.patent_count) else "neutral",
+        ),
+        FundamentalModule(
+            title="市场定位与估值风险",
+            summary=f"估值判断不单看便宜或贵，而要和增长兑现、市场定位一起看；当前{valuation_text}。",
+            key_points=["高估值需要更强订单和利润兑现支撑", "低估值需要确认基本面是否已企稳"],
+            status="warning" if any((item.percentile or 0) >= 70 for item in valuations) else "neutral",
+        ),
+    ]
+
+
+def _build_watch_signals(
+    reports: list[FinancialReport],
+    segments: list[SegmentContributionItem],
+    impacts: list[ImpactFactor],
+    valuations: list[ValuationPercentile],
+) -> list[WatchSignal]:
+    latest = reports[-1] if reports else None
+    top_segment = segments[0] if segments else None
+    top_negative = next((item for item in impacts if item.direction == "negative"), None)
+    pe = next((item for item in valuations if item.metric == "PE"), None)
+    return [
+        WatchSignal(
+            name="收入与利润增速",
+            value=f"收入{_format_money(_to_float(latest.revenue))} / 净利{_format_money(_to_float(latest.net_profit))}" if latest else "--",
+            judgement="验证产业逻辑是否真正兑现到财报",
+            source="财务报表",
+        ),
+        WatchSignal(
+            name="主力业务毛利贡献",
+            value=f"{top_segment.segment_name} {_format_percent(top_segment.gross_profit_share)}" if top_segment else "--",
+            judgement="判断公司利润是否仍由核心业务驱动",
+            source="业务分部",
+        ),
+        WatchSignal(
+            name="最大负面因素",
+            value=f"{top_negative.name} {_format_money(top_negative.impact)}" if top_negative else "暂无显著负面项",
+            judgement="优先解释业绩下滑或利润弹性不足的来源",
+            source="影响因素排序",
+        ),
+        WatchSignal(
+            name="估值分位",
+            value=f"PE {pe.label} / {_format_percent(pe.percentile)}" if pe else "--",
+            judgement="判断市场预期是否已经透支",
+            source="估值指标",
+        ),
+    ]
+
+
+def _latest_extraction(extractions: list[AnnualReportExtraction]) -> AnnualReportExtraction | None:
+    return sorted(extractions, key=lambda item: item.report_period)[-1] if extractions else None
+
+
+def _extraction_notes(extraction: AnnualReportExtraction | None) -> dict[str, str]:
+    if extraction is None or not extraction.notes_json:
+        return {}
+    try:
+        data = json.loads(extraction.notes_json)
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _note_or_default(extraction: AnnualReportExtraction | None, key: str, default: str) -> str:
+    return _extraction_notes(extraction).get(key) or default
+
+
+def _format_count(value: Decimal | float | int | None) -> str:
+    return "--" if value is None else f"{float(value):.0f}项"
+
+
+def _impact(name: str, category: str, impact: float | None, explanation: str) -> ImpactFactor:
+    if impact is None:
+        direction = "neutral"
+    elif impact > 0:
+        direction = "positive"
+    elif impact < 0:
+        direction = "negative"
+    else:
+        direction = "neutral"
+    return ImpactFactor(
+        name=name,
+        category=category,
+        impact=round(impact, 2) if impact is not None else None,
+        direction=direction,
+        explanation=explanation,
+    )
+
+
 def _build_ai_insight(
     overall: float, growth: float, quality: float, valuation: float, factors: list[ScoreFactor]
 ) -> AiInsight:
@@ -357,6 +688,81 @@ def _weighted_score(factors: list[ScoreFactor], names: set[str]) -> float:
 
 def _to_float(value: Decimal | float | int | None) -> float | None:
     return float(value) if value is not None else None
+
+
+def _delta(current: Decimal | float | int | None, previous: Decimal | float | int | None) -> float | None:
+    if current is None or previous is None:
+        return None
+    return round(float(current) - float(previous), 2)
+
+
+def _neg_delta(current: Decimal | float | int | None, previous: Decimal | float | int | None) -> float | None:
+    value = _delta(current, previous)
+    return -value if value is not None else None
+
+
+def _latest_period(periods: list[str]) -> str | None:
+    return sorted(periods)[-1] if periods else None
+
+
+def _match_period_item(items: list[ExpenseItem], report_period: str) -> ExpenseItem | None:
+    return next((item for item in items if item.report_period == report_period), None)
+
+
+def _segment_role(segment_type: str, share: float | None, gross_margin: float | None) -> str:
+    type_label = {
+        "product": "产品口径",
+        "industry": "行业口径",
+        "region": "地区口径",
+        "sales_mode": "销售模式口径",
+    }.get(segment_type, "分部口径")
+    if share is not None and share >= 50:
+        return f"{type_label}核心利润来源"
+    if gross_margin is not None and gross_margin >= 40:
+        return f"{type_label}高毛利观察项"
+    return f"{type_label}结构观察项"
+
+
+def _cash_quality_summary(report: FinancialReport | None) -> str:
+    if report is None:
+        return "暂无财报数据，无法验证经营现金流质量。"
+    match = _safe_ratio(report.operating_cash_flow, report.net_profit)
+    if match is None:
+        return "经营现金流或净利润缺失，需要补充现金流量表数据。"
+    if match >= 1:
+        return "经营现金流高于净利润，利润含金量较好。"
+    if match >= 0.8:
+        return "经营现金流基本匹配净利润，利润质量尚可。"
+    return "经营现金流弱于净利润，需要核回应收、存货和回款压力。"
+
+
+def _leverage_summary(report: FinancialReport | None) -> str:
+    if report is None:
+        return "暂无财报数据，无法判断资产负债结构。"
+    multiplier = _safe_ratio(report.total_assets, report.net_assets)
+    if multiplier is None:
+        return "总资产或净资产缺失，需要补充资产负债表数据。"
+    if multiplier <= 2:
+        return "权益乘数较低，资产负债结构相对稳健。"
+    if multiplier <= 4:
+        return "权益乘数处于适中区间，需要跟踪扩张效率。"
+    return "权益乘数偏高，需要警惕杠杆扩张风险。"
+
+
+def _format_percent(value: float | None) -> str:
+    return "--" if value is None else f"{value:.2f}%"
+
+
+def _format_money(value: float | None) -> str:
+    if value is None:
+        return "--"
+    abs_value = abs(value)
+    sign = "-" if value < 0 else ""
+    if abs_value >= 100000000:
+        return f"{sign}{abs_value / 100000000:.2f}亿"
+    if abs_value >= 10000:
+        return f"{sign}{abs_value / 10000:.2f}万"
+    return f"{value:.2f}"
 
 
 def _safe_ratio(numerator: Decimal | float | int | None, denominator: Decimal | float | int | None) -> float | None:

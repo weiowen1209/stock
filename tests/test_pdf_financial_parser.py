@@ -16,6 +16,9 @@ SAMPLE_REPORT_TEXT = """
 管理费用 2,300.00 2,100.00
 研发费用 3,400.00 3,000.00
 财务费用 -50.00 20.00
+投资收益 2,000.00 1,000.00
+资产减值损失 -300.00 -100.00
+营业利润 18,000.00 14,000.00
 1.归属于母公司股东的净利润
 （净亏损以“-”号填列） 15,000.00 12,000.00
 基本每股收益 1.23 0.98
@@ -25,6 +28,12 @@ SAMPLE_REPORT_TEXT = """
 归属于母公司所有者权益合计 280,000.00 240,000.00
 合并现金流量表
 经营活动产生的现金流量净额 18,000.00 14,000.00 单位：万元
+销售商品、提供劳务收到的现金 120,000.00 99,000.00
+资产负债表补充
+资本公积 260,000.00 120,000.00 单位：万元
+研发投入合计 3,500.00 单位：万元
+研发投入占营业收入的比例 2.84
+公司承担国家标准编制并推进年产50万台精密谐波减速器项目。
 分产品
 谐波减速器 90,000.00 50,000.00 44.44 20.00
 机电一体化产品 33,456.78 33,456.78 0.00 10.00
@@ -57,6 +66,13 @@ def test_parse_financial_tables_extracts_three_statement_fields():
     assert result.field_sources["revenue"]["section"] == "income"
     assert result.field_sources["total_assets"]["section"] == "balance"
     assert result.field_sources["operating_cash_flow"]["section"] == "cashflow"
+    assert result.extractions is not None
+    assert result.extractions.operating_profit == Decimal("180000000.00")
+    assert result.extractions.investment_income == Decimal("20000000.00")
+    assert result.extractions.asset_impairment_loss == Decimal("-3000000.00")
+    assert result.extractions.cash_received_from_sales == Decimal("1200000000.00")
+    assert result.extractions.capital_reserve == Decimal("2600000000.00")
+    assert result.extractions.notes["standards"]
     assert [(item.segment_type, item.segment_name) for item in result.segments] == [
         ("product", "谐波减速器"),
         ("product", "机电一体化产品"),

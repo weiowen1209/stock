@@ -14,7 +14,7 @@
       </div>
     </div>
 
-    <el-button type="primary" :loading="syncing" @click="$emit('sync-all')">同步所有股票</el-button>
+    <el-button type="primary" :loading="syncing" @click="$emit('sync-all')">同步全部股票池</el-button>
   </section>
 </template>
 
@@ -47,7 +47,7 @@ const syncSummary = computed(() => {
 })
 const quoteCoverageText = computed(() => formatCoverage(quoteCount.value, stockCount.value))
 const klineCoverageText = computed(() => formatCoverage(klineCount.value, stockCount.value))
-const quoteUpdatedAtText = computed(() => formatDateTime(coverage.value?.quote_updated_at))
+const quoteUpdatedAtText = computed(() => formatDateTime(coverage.value?.quote_source_updated_at ?? coverage.value?.quote_updated_at))
 const klineRangeText = computed(() => {
   const start = formatDate(coverage.value?.kline_start_date)
   const end = formatDate(coverage.value?.kline_end_date)

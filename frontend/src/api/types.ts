@@ -44,6 +44,7 @@ export interface Quote {
   turnover: string | number | null
   market_cap: string | number | null
   source: string | null
+  source_updated_at: string | null
   updated_at: string
 }
 
@@ -91,6 +92,7 @@ export interface SyncCoverage {
   missing_kline_count: number
   missing_total: number
   quote_updated_at: string | null
+  quote_source_updated_at: string | null
   kline_start_date: string | null
   kline_end_date: string | null
   kline_period_count: number
@@ -192,6 +194,37 @@ export interface ValuationMetric {
   source: string | null
 }
 
+export interface AnnualReportExtraction {
+  code: string
+  report_period: string
+  document_id: number | null
+  operating_profit: string | number | null
+  total_profit: string | number | null
+  non_recurring_net_profit: string | number | null
+  income_tax_expense: string | number | null
+  minority_interest: string | number | null
+  other_income: string | number | null
+  investment_income: string | number | null
+  fair_value_change_income: string | number | null
+  credit_impairment_loss: string | number | null
+  asset_impairment_loss: string | number | null
+  asset_disposal_income: string | number | null
+  cash_received_from_sales: string | number | null
+  cash_received_other_operating: string | number | null
+  inventory_total: string | number | null
+  inventory_impairment: string | number | null
+  capital_reserve: string | number | null
+  total_share_capital: string | number | null
+  rd_investment: string | number | null
+  rd_investment_ratio: string | number | null
+  patent_count: string | number | null
+  invention_patent_count: string | number | null
+  construction_in_progress: string | number | null
+  notes: Record<string, string>
+  source: string | null
+  review_status: string
+}
+
 export interface ScoreFactor {
   name: string
   score: number
@@ -252,6 +285,40 @@ export interface AiInsight {
   watch_items: string[]
 }
 
+export interface FundamentalModule {
+  title: string
+  summary: string
+  key_points: string[]
+  status: string
+}
+
+export interface ImpactFactor {
+  name: string
+  category: string
+  impact: number | null
+  direction: string
+  explanation: string
+}
+
+export interface SegmentContributionItem {
+  report_period: string
+  segment_type: string
+  segment_name: string
+  revenue: number | null
+  gross_profit: number | null
+  gross_margin: number | null
+  revenue_yoy: number | null
+  gross_profit_share: number | null
+  role: string
+}
+
+export interface WatchSignal {
+  name: string
+  value: string
+  judgement: string
+  source: string
+}
+
 export interface DeepFundamentalAnalysis {
   code: string
   report_period: string | null
@@ -265,6 +332,10 @@ export interface DeepFundamentalAnalysis {
   peer_comparison: PeerComparisonItem[]
   valuation_percentiles: ValuationPercentile[]
   ai_insight: AiInsight
+  analysis_modules: FundamentalModule[]
+  impact_factors: ImpactFactor[]
+  segment_contribution: SegmentContributionItem[]
+  watch_signals: WatchSignal[]
 }
 
 export interface TechnicalIndicators {
@@ -367,6 +438,32 @@ export interface FieldSource {
   line?: string
 }
 
+export interface ReportExtractions {
+  operating_profit: string | number | null
+  total_profit: string | number | null
+  non_recurring_net_profit: string | number | null
+  income_tax_expense: string | number | null
+  minority_interest: string | number | null
+  other_income: string | number | null
+  investment_income: string | number | null
+  fair_value_change_income: string | number | null
+  credit_impairment_loss: string | number | null
+  asset_impairment_loss: string | number | null
+  asset_disposal_income: string | number | null
+  cash_received_from_sales: string | number | null
+  cash_received_other_operating: string | number | null
+  inventory_total: string | number | null
+  inventory_impairment: string | number | null
+  capital_reserve: string | number | null
+  total_share_capital: string | number | null
+  rd_investment: string | number | null
+  rd_investment_ratio: string | number | null
+  patent_count: string | number | null
+  invention_patent_count: string | number | null
+  construction_in_progress: string | number | null
+  notes: Record<string, string>
+}
+
 export interface ImportPreview {
   batch: ImportBatch
   financial: ManualFinancialInput
@@ -375,6 +472,7 @@ export interface ImportPreview {
   confidence: string | number
   warnings: string[]
   field_sources: Record<string, FieldSource>
+  extractions: ReportExtractions | null
   document: ReportDocument | null
   parse_job: ReportParseJob | null
   is_duplicate: boolean
@@ -390,6 +488,7 @@ export interface ConfirmImportRequest {
   financial: ManualFinancialInput
   segments: SegmentInput[]
   expenses: ExpenseInput | null
+  extractions: ReportExtractions | null
 }
 
 export interface ConfirmImportResult {
@@ -397,4 +496,5 @@ export interface ConfirmImportResult {
   financial_records: number
   segment_records: number
   expense_records: number
+  extraction_records: number
 }

@@ -2,7 +2,7 @@ import re
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 
-from backend.schemas.importing import ExpenseInput, ManualFinancialInput, SegmentInput
+from backend.schemas.importing import ExpenseInput, ManualFinancialInput, ReportExtractions, SegmentInput
 
 
 @dataclass
@@ -19,6 +19,7 @@ class ExtractedValue:
 class FinancialParseResult:
     financial: ManualFinancialInput
     expenses: ExpenseInput | None
+    extractions: ReportExtractions | None = None
     segments: list[SegmentInput] = field(default_factory=list)
     confidence: Decimal = Decimal("0")
     warnings: list[str] = field(default_factory=list)
@@ -45,6 +46,30 @@ FIELD_RULES: dict[str, dict[str, object]] = {
     "rd_expense": {"section": "income", "labels": ["研发费用"]},
     "finance_expense": {"section": "income", "labels": ["财务费用"]},
 }
+EXTRACTION_RULES: dict[str, dict[str, object]] = {
+    "operating_profit": {"section": "income", "labels": ["营业利润"]},
+    "total_profit": {"section": "income", "labels": ["利润总额"]},
+    "non_recurring_net_profit": {"section": "income", "labels": ["扣除非经常性损益后归属于母公司股东的净利润", "扣除非经常性损益后的净利润", "扣非净利润"]},
+    "income_tax_expense": {"section": "income", "labels": ["所得税费用"]},
+    "minority_interest": {"section": "income", "labels": ["少数股东损益"]},
+    "other_income": {"section": "income", "labels": ["其他收益"]},
+    "investment_income": {"section": "income", "labels": ["投资收益"]},
+    "fair_value_change_income": {"section": "income", "labels": ["公允价值变动收益", "公允价值变动损益"]},
+    "credit_impairment_loss": {"section": "income", "labels": ["信用减值损失"]},
+    "asset_impairment_loss": {"section": "income", "labels": ["资产减值损失"]},
+    "asset_disposal_income": {"section": "income", "labels": ["资产处置收益"]},
+    "cash_received_from_sales": {"section": "cashflow", "labels": ["销售商品、提供劳务收到的现金", "销售商品提供劳务收到的现金"]},
+    "cash_received_other_operating": {"section": "cashflow", "labels": ["收到其他与经营活动有关的现金"]},
+    "inventory_total": {"section": "balance", "labels": ["存货"]},
+    "inventory_impairment": {"section": "all", "labels": ["存货跌价准备", "存货跌价损失"]},
+    "capital_reserve": {"section": "balance", "labels": ["资本公积"]},
+    "total_share_capital": {"section": "balance", "labels": ["股本", "实收资本"]},
+    "rd_investment": {"section": "all", "labels": ["研发投入合计", "研发投入"]},
+    "rd_investment_ratio": {"section": "all", "labels": ["研发投入占营业收入的比例", "研发投入总额占营业收入比例"], "apply_unit": False},
+    "patent_count": {"section": "all", "labels": ["专利", "授权专利"], "apply_unit": False},
+    "invention_patent_count": {"section": "all", "labels": ["发明专利", "授权发明专利"], "apply_unit": False},
+    "construction_in_progress": {"section": "balance", "labels": ["在建工程"]},
+}
 
 SECTION_PATTERNS = {
     "income": [r"合并利润表", r"利润表", r"损益表"],
@@ -70,6 +95,11 @@ def parse_financial_tables(text: str, code: str | None = None, report_period: st
         labels = [str(item) for item in rule["labels"]]
         preferred_section = str(rule["section"])
         extracted[field_name] = _find_field_value(labels, sections, preferred_section, bool(rule.get("apply_unit", True)))
+    extra_extracted: dict[str, ExtractedValue] = {}
+    for field_name, rule in EXTRACTION_RULES.items():
+        labels = [str(item) for item in rule["labels"]]
+        preferred_section = str(rule["section"])
+        extra_extracted[field_name] = _find_field_value(labels, sections, preferred_section, bool(rule.get("apply_unit", True)))
 
     financial = ManualFinancialInput(
         code=code or _match_text(normalized, r"(?:证券代码|股票代码|代码)[:：\s]*([0-9]{6})") or "688017",
@@ -94,6 +124,7 @@ def parse_financial_tables(text: str, code: str | None = None, report_period: st
     )
     if not any(value is not None for value in expenses.model_dump().values()):
         expenses = None
+    extractions = _build_extractions(extra_extracted, normalized)
     segments = parse_business_segments(normalized)
     found_count = sum(1 for item in extracted.values() if item.value is not None)
     confidence = min(Decimal("0.90"), Decimal("0.35") + Decimal(found_count) * Decimal("0.05"))
@@ -101,10 +132,11 @@ def parse_financial_tables(text: str, code: str | None = None, report_period: st
     return FinancialParseResult(
         financial=financial,
         expenses=expenses,
+        extractions=extractions,
         segments=segments,
         confidence=confidence,
         warnings=warnings,
-        field_sources=_build_sources(extracted),
+        field_sources=_build_sources({**extracted, **extra_extracted}),
     )
 
 
@@ -212,6 +244,58 @@ def _dedupe_segments(segments: list[SegmentInput]) -> list[SegmentInput]:
     return output
 
 
+def _build_extractions(extracted: dict[str, ExtractedValue], text: str) -> ReportExtractions:
+    return ReportExtractions(
+        operating_profit=_value(extracted, "operating_profit"),
+        total_profit=_value(extracted, "total_profit"),
+        non_recurring_net_profit=_value(extracted, "non_recurring_net_profit"),
+        income_tax_expense=_value(extracted, "income_tax_expense"),
+        minority_interest=_value(extracted, "minority_interest"),
+        other_income=_value(extracted, "other_income"),
+        investment_income=_value(extracted, "investment_income"),
+        fair_value_change_income=_value(extracted, "fair_value_change_income"),
+        credit_impairment_loss=_value(extracted, "credit_impairment_loss"),
+        asset_impairment_loss=_value(extracted, "asset_impairment_loss"),
+        asset_disposal_income=_value(extracted, "asset_disposal_income"),
+        cash_received_from_sales=_value(extracted, "cash_received_from_sales"),
+        cash_received_other_operating=_value(extracted, "cash_received_other_operating"),
+        inventory_total=_value(extracted, "inventory_total"),
+        inventory_impairment=_value(extracted, "inventory_impairment"),
+        capital_reserve=_value(extracted, "capital_reserve"),
+        total_share_capital=_value(extracted, "total_share_capital"),
+        rd_investment=_value(extracted, "rd_investment"),
+        rd_investment_ratio=_value(extracted, "rd_investment_ratio"),
+        patent_count=_value(extracted, "patent_count"),
+        invention_patent_count=_value(extracted, "invention_patent_count"),
+        construction_in_progress=_value(extracted, "construction_in_progress"),
+        notes=_build_extraction_notes(text),
+    )
+
+
+def _build_extraction_notes(text: str) -> dict[str, str]:
+    notes: dict[str, str] = {}
+    for keyword, note_key in [
+        ("国家标准", "standards"),
+        ("核心技术", "core_technology"),
+        ("定向增发", "private_placement"),
+        ("募集资金", "fundraising"),
+        ("年产", "capacity_project"),
+        ("行星滚柱丝杠", "planetary_roller_screw"),
+    ]:
+        line = _find_keyword_line(text, keyword)
+        if line:
+            notes[note_key] = line
+    return notes
+
+
+def _find_keyword_line(text: str, keyword: str) -> str | None:
+    for line in text.splitlines():
+        stripped = line.strip()
+        if keyword in stripped and len(stripped) <= 180:
+            return stripped
+    return None
+
+
 def _normalize_text(text: str) -> str:
     text = text.replace("\r", "\n").replace("\u3000", " ")
     text = re.sub(r"[\t ]+", " ", text)
@@ -286,9 +370,12 @@ def _extract_number_from_line(
     unit = (_detect_unit(line) or section_unit) if apply_unit else None
     cleaned = line.replace(",", "")
     compact_label = _compact(label)
-    label_index = _compact(cleaned).find(compact_label)
+    compact_cleaned = _compact(cleaned)
+    label_index = compact_cleaned.find(compact_label)
     if label_index >= 0:
-        cleaned = cleaned[max(0, label_index):]
+        compact_prefix_length = len(compact_cleaned[:label_index])
+        original_index = _original_index_for_compact_offset(cleaned, compact_prefix_length)
+        cleaned = cleaned[original_index:]
     numbers = re.findall(r"(?<![0-9])\(?-?[0-9]+(?:\.[0-9]+)?\)?(?![0-9%])", cleaned)
     values = [_to_decimal(number, unit) for number in numbers]
     values = [value for value in values if value is not None]
@@ -321,13 +408,29 @@ def _compact(value: str) -> str:
     return re.sub(r"[\s:：　（）()]+", "", value)
 
 
+def _original_index_for_compact_offset(value: str, compact_offset: int) -> int:
+    if compact_offset <= 0:
+        return 0
+    compact_count = 0
+    for index, char in enumerate(value):
+        if re.match(r"[\s:：　（）()]", char):
+            continue
+        if compact_count == compact_offset:
+            return index
+        compact_count += 1
+    return len(value)
+
+
 def _match_text(text: str, pattern: str) -> str | None:
     matched = re.search(pattern, text, re.I)
     return matched.group(1) if matched else None
 
 
 def _match_report_period(text: str) -> str | None:
-    matched = re.search(r"(20[0-9]{2}\s*年\s*(?:年度报告|年度|半年度报告|半年度|第一季度报告|第三季度报告|年报|半年报|一季报|三季报))", text)
+    matched = re.search(
+        r"(20[0-9]{2}\s*(?:年度报告|年度|年报|半年度报告|半年度|半年报|第一季度报告|第三季度报告|一季报|三季报|年\s*报|半\s*年\s*报))",
+        text,
+    )
     if not matched:
         return None
     value = re.sub(r"\s+", "", matched.group(1))
@@ -336,7 +439,10 @@ def _match_report_period(text: str) -> str | None:
         .replace("半年度报告", "半年报")
         .replace("第一季度报告", "一季报")
         .replace("第三季度报告", "三季报")
+        .replace("半年度", "半年报")
         .replace("年度", "年报")
+        .replace("年报", "年报")
+        .replace("半年报", "半年报")
     )
     return normalized.replace("年年报", "年报")
 

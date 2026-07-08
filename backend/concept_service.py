@@ -60,6 +60,9 @@ async def sync_coverage(session: AsyncSession) -> dict[str, int | str | None]:
     quote_updated_at = (
         await session.execute(select(func.max(RealtimeQuote.updated_at)).where(RealtimeQuote.code.in_(stock_codes)))
     ).scalar_one_or_none()
+    quote_source_updated_at = (
+        await session.execute(select(func.max(RealtimeQuote.source_updated_at)).where(RealtimeQuote.code.in_(stock_codes)))
+    ).scalar_one_or_none()
     valid_kline_filter = KLineData.code.in_(stock_codes) & (KLineData.date <= date.today())
     kline_range = (
         await session.execute(select(func.min(KLineData.date), func.max(KLineData.date)).where(valid_kline_filter))
@@ -77,6 +80,7 @@ async def sync_coverage(session: AsyncSession) -> dict[str, int | str | None]:
         "missing_kline_count": len(missing_kline),
         "missing_total": len(missing_quotes) + len(missing_kline),
         "quote_updated_at": quote_updated_at.isoformat() if quote_updated_at else None,
+        "quote_source_updated_at": quote_source_updated_at.isoformat() if quote_source_updated_at else None,
         "kline_start_date": kline_range[0].isoformat() if kline_range[0] else None,
         "kline_end_date": kline_range[1].isoformat() if kline_range[1] else None,
         "kline_period_count": int(kline_periods or 0),

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import get_settings
 from backend.models import (
+    AnnualReportExtraction,
     BusinessSegment,
     ExpenseItem,
     FinancialReport,
@@ -28,6 +29,7 @@ from backend.schemas.importing import (
     ImportPreview,
     ManualFinancialInput,
     ReportDocumentUploadResult,
+    ReportExtractions,
     SegmentInput,
 )
 
@@ -106,8 +108,8 @@ async def parse_report_document(
     text = _decode_content(content)
     parsed = parse_financial_tables(
         text,
-        code=code or document.code,
-        report_period=report_period or document.report_period,
+        code=code,
+        report_period=report_period,
     )
     financial = parsed.financial
     segments = parsed.segments or _parse_segments(text)
@@ -136,6 +138,7 @@ async def parse_report_document(
         segments_json=json.dumps([item.model_dump(mode="json") for item in segments], ensure_ascii=False),
         expenses_json=expenses.model_dump_json() if expenses else None,
         field_sources_json=json.dumps(parsed.field_sources, ensure_ascii=False),
+        extractions_json=parsed.extractions.model_dump_json() if parsed.extractions else None,
     )
     session.add(result)
     document.code = financial.code
@@ -165,6 +168,7 @@ async def parse_report_document(
         confidence=confidence,
         warnings=warnings,
         field_sources=parsed.field_sources,
+        extractions=parsed.extractions,
         document=document,
         parse_job=job,
         is_duplicate=is_duplicate,
@@ -192,6 +196,7 @@ async def create_manual_preview(
         confidence=Decimal("1.00"),
         warnings=[],
         field_sources={},
+        extractions=None,
     )
 
 
@@ -204,6 +209,7 @@ async def confirm_import(
     financial_records = await _upsert_financial(session, batch_id, payload.financial)
     segment_records = await _upsert_segments(session, batch_id, payload.financial, payload.segments)
     expense_records = await _upsert_expenses(session, batch_id, payload.financial, payload.expenses)
+    extraction_records = await _upsert_extractions(session, batch_id, batch, payload.financial, payload.extractions)
     batch.status = "confirmed"
     batch.confirmed_at = datetime.now()
     batch.code = payload.financial.code
@@ -223,6 +229,7 @@ async def confirm_import(
         financial_records=financial_records,
         segment_records=segment_records,
         expense_records=expense_records,
+        extraction_records=extraction_records,
     )
 
 
@@ -287,6 +294,7 @@ async def get_latest_document_preview(session: AsyncSession, document_id: int) -
         confidence=job.confidence if job and job.confidence is not None else Decimal("0"),
         warnings=json.loads(job.warnings) if job and job.warnings else [],
         field_sources=json.loads(parse_result.field_sources_json) if parse_result.field_sources_json else {},
+        extractions=ReportExtractions.model_validate_json(parse_result.extractions_json) if parse_result.extractions_json else None,
         document=document,
         parse_job=job,
         is_duplicate=False,
@@ -511,6 +519,63 @@ async def _upsert_expenses(
     update_fields = {key: getattr(stmt.excluded, key) for key in [
         "selling_expense", "admin_expense", "rd_expense", "finance_expense", "source", "import_id"
     ]}
+    await session.execute(stmt.on_conflict_do_update(index_elements=["code", "report_period"], set_=update_fields))
+    return 1
+
+
+async def _upsert_extractions(
+    session: AsyncSession,
+    batch_id: int,
+    batch: ImportBatch,
+    financial: ManualFinancialInput,
+    extractions: ReportExtractions | None,
+) -> int:
+    if extractions is None:
+        return 0
+    values = extractions.model_dump()
+    notes = values.pop("notes", {}) or {}
+    stmt = insert(AnnualReportExtraction).values(
+        code=financial.code,
+        report_period=financial.report_period,
+        document_id=batch.document_id,
+        import_id=batch_id,
+        **values,
+        notes_json=json.dumps(notes, ensure_ascii=False),
+        source="import",
+        review_status="confirmed",
+    )
+    update_fields = {
+        key: getattr(stmt.excluded, key)
+        for key in [
+            "document_id",
+            "import_id",
+            "operating_profit",
+            "total_profit",
+            "non_recurring_net_profit",
+            "income_tax_expense",
+            "minority_interest",
+            "other_income",
+            "investment_income",
+            "fair_value_change_income",
+            "credit_impairment_loss",
+            "asset_impairment_loss",
+            "asset_disposal_income",
+            "cash_received_from_sales",
+            "cash_received_other_operating",
+            "inventory_total",
+            "inventory_impairment",
+            "capital_reserve",
+            "total_share_capital",
+            "rd_investment",
+            "rd_investment_ratio",
+            "patent_count",
+            "invention_patent_count",
+            "construction_in_progress",
+            "notes_json",
+            "source",
+            "review_status",
+        ]
+    }
     await session.execute(stmt.on_conflict_do_update(index_elements=["code", "report_period"], set_=update_fields))
     return 1
 

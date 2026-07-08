@@ -13,6 +13,7 @@ class QuoteRead(OrmModel):
     turnover: Decimal | None = None
     market_cap: Decimal | None = None
     source: str | None = None
+    source_updated_at: datetime | None = None
     updated_at: datetime
 
 
@@ -37,6 +38,9 @@ class SyncRequest(OrmModel):
     include_kline: bool = True
     period: str = "day"
     periods: list[str] | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    force_full: bool = False
 
 
 class SyncResult(OrmModel):

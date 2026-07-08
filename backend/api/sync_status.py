@@ -32,7 +32,7 @@ async def trigger_sync(
     if request.include_kline:
         periods = request.periods or [request.period]
         for period in periods:
-            results.append(await sync_kline(session, codes, period=period))
+            results.append(await sync_kline(session, codes, period=period, start=request.start_date, end=request.end_date, force_full=request.force_full))
     return ApiResponse(data=results, meta=ResponseMeta())
 
 

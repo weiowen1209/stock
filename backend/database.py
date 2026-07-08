@@ -17,6 +17,7 @@ async def init_db() -> None:
         await conn.run_sync(Base.metadata.create_all)
         await _ensure_import_batch_columns(conn)
         await _ensure_report_parse_result_columns(conn)
+        await _ensure_realtime_quote_columns(conn)
 
 
 async def _ensure_import_batch_columns(conn) -> None:
@@ -33,6 +34,15 @@ async def _ensure_report_parse_result_columns(conn) -> None:
     columns = {row[1] for row in result.fetchall()}
     if columns and "field_sources_json" not in columns:
         await conn.execute(text("ALTER TABLE report_parse_results ADD COLUMN field_sources_json TEXT"))
+    if columns and "extractions_json" not in columns:
+        await conn.execute(text("ALTER TABLE report_parse_results ADD COLUMN extractions_json TEXT"))
+
+
+async def _ensure_realtime_quote_columns(conn) -> None:
+    result = await conn.execute(text("PRAGMA table_info(realtime_quotes)"))
+    columns = {row[1] for row in result.fetchall()}
+    if columns and "source_updated_at" not in columns:
+        await conn.execute(text("ALTER TABLE realtime_quotes ADD COLUMN source_updated_at DATETIME"))
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

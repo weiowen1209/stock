@@ -92,14 +92,14 @@ const visibleModel = computed({
   set: (value: boolean) => emit('update:visible', value)
 })
 
-const dialogTitle = computed(() => (props.mode === 'all' ? '同步所有股票' : '同步当前股票'))
+const dialogTitle = computed(() => (props.mode === 'all' ? '同步股票范围' : '同步当前股票'))
 const progressPercent = computed(() => Math.max(0, Math.min(props.progress?.percent ?? 0, 100)))
 const isFailed = computed(() => props.progress?.stage === 'failed')
 const progressStatus = computed(() => (isFailed.value ? 'exception' : progressPercent.value === 100 ? 'success' : undefined))
 const activeProvider = computed(() => props.progress?.provider ?? null)
 const activeCode = computed(() => props.progress?.code ?? null)
 const stockLabel = computed(() => {
-  if (props.mode === 'all') return `全部股票池（${props.totalStocks} 只）`
+  if (props.mode === 'all') return `全部股票池范围（${props.totalStocks} 只）`
   if (!props.currentStock) return props.currentCode || '未选择股票'
   return `${props.currentStock.name}（${props.currentStock.code}）`
 })

@@ -119,64 +119,49 @@
           <h3>启用股票 {{ stocks.length }} 只，当前显示 {{ filteredStocks.length }} 只</h3>
         </div>
         <div class="actions-row table-actions">
+          <el-dropdown :disabled="!hasSelectedStocks || syncing" @command="handleBatchSyncCommand">
+            <el-button type="success" plain :disabled="!hasSelectedStocks || syncing">
+              同步选中范围 {{ selectedSyncCodes.length ? `(${selectedSyncCodes.length})` : '' }}
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="incremental">按增量模式同步选中范围</el-dropdown-item>
+                <el-dropdown-item command="full">按全量模式同步选中范围</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <el-button :disabled="!hasStockFilters" @click="resetStockFilters">清空筛选</el-button>
           <el-button :loading="loading" @click="loadStocks">刷新</el-button>
         </div>
       </div>
-      <el-table :data="filteredStocks" height="520" class="base-table">
-        <el-table-column label="同步" width="92" fixed="left">
-          <template #default="{ row }">
-            <el-button link type="success" :loading="syncing && syncingCode === row.code" @click.stop="syncStock(row)">同步</el-button>
-          </template>
-        </el-table-column>
-        <el-table-column prop="code" width="120">
-          <template #header>
-            <div class="column-filter">
-              <span class="column-filter__label">代码</span>
-              <el-input v-model="stockFilters.code" size="small" clearable placeholder="搜代码" class="column-filter__input" />
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="name" width="130">
-          <template #header>
-            <div class="column-filter">
-              <span class="column-filter__label">名称</span>
-              <el-input v-model="stockFilters.name" size="small" clearable placeholder="搜名称" class="column-filter__input" />
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="exchange" width="112">
-          <template #header>
-            <div class="column-filter">
-              <span class="column-filter__label">交易所</span>
-              <el-input v-model="stockFilters.exchange" size="small" clearable placeholder="搜市场" class="column-filter__input" />
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="industry_chain" min-width="170">
-          <template #header>
-            <div class="column-filter">
-              <span class="column-filter__label">一级分类</span>
-              <el-input v-model="stockFilters.industry_chain" size="small" clearable placeholder="搜一级" class="column-filter__input" />
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="industry_chain_detail" min-width="230">
-          <template #header>
-            <div class="column-filter">
-              <span class="column-filter__label">二级/三级分类</span>
-              <el-input v-model="stockFilters.industry_chain_detail" size="small" clearable placeholder="搜分类" class="column-filter__input" />
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="core_products" min-width="170">
-          <template #header>
-            <div class="column-filter">
-              <span class="column-filter__label">核心产品</span>
-              <el-input v-model="stockFilters.core_products" size="small" clearable placeholder="搜产品" class="column-filter__input" />
-            </div>
-          </template>
-        </el-table-column>
+      <div class="stock-filter-grid">
+        <el-input v-model="stockFilters.code" size="small" clearable placeholder="搜代码">
+          <template #prepend>代码</template>
+        </el-input>
+        <el-input v-model="stockFilters.name" size="small" clearable placeholder="搜名称">
+          <template #prepend>名称</template>
+        </el-input>
+        <el-input v-model="stockFilters.exchange" size="small" clearable placeholder="搜市场">
+          <template #prepend>交易所</template>
+        </el-input>
+        <el-input v-model="stockFilters.industry_chain" size="small" clearable placeholder="搜一级">
+          <template #prepend>一级分类</template>
+        </el-input>
+        <el-input v-model="stockFilters.industry_chain_detail" size="small" clearable placeholder="搜分类">
+          <template #prepend>二级/三级</template>
+        </el-input>
+        <el-input v-model="stockFilters.core_products" size="small" clearable placeholder="搜产品">
+          <template #prepend>核心产品</template>
+        </el-input>
+      </div>
+      <el-table :data="filteredStocks" height="520" class="base-table" @selection-change="handleSelectionChange">
+        <el-table-column type="selection" width="52" fixed="left" />
+        <el-table-column prop="code" label="代码" width="120" />
+        <el-table-column prop="name" label="名称" width="130" />
+        <el-table-column prop="exchange" label="交易所" width="112" />
+        <el-table-column prop="industry_chain" label="一级分类" min-width="170" />
+        <el-table-column prop="industry_chain_detail" label="二级/三级分类" min-width="230" />
+        <el-table-column prop="core_products" label="核心产品" min-width="170" />
         <el-table-column label="操作" width="138" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="editStock(row)">修改</el-button>
@@ -200,7 +185,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'sync-stock': [code: string]
+  'sync-stock': [codes: string[], forceFull: boolean]
 }>()
 
 const store = useStockStore()
@@ -211,7 +196,7 @@ const importResult = ref<BaseDataImportResult | null>(null)
 const showImportSkippedAlert = ref(false)
 let importSkippedAlertTimer: ReturnType<typeof window.setTimeout> | null = null
 const loading = ref(false)
-const syncingCode = ref<string | null>(null)
+const selectedSyncCodes = ref<string[]>([])
 const activeInputMode = ref<'excel' | 'manual' | 'category'>('excel')
 const inputModeOptions = [
   { label: 'Excel导入', value: 'excel' },
@@ -275,12 +260,7 @@ const level3Options = computed(() =>
       .map((category) => category.level3)
   )
 )
-watch(
-  () => props.syncing,
-  (value) => {
-    if (!value) syncingCode.value = null
-  }
-)
+const hasSelectedStocks = computed(() => selectedSyncCodes.value.length > 0)
 onMounted(async () => {
   await loadStocks()
   await loadCategories()
@@ -312,10 +292,13 @@ function resetStockFilters() {
   })
 }
 
-function syncStock(row: Stock) {
-  if (props.syncing) return
-  syncingCode.value = row.code
-  emit('sync-stock', row.code)
+function handleSelectionChange(rows: Stock[]) {
+  selectedSyncCodes.value = rows.map((row) => row.code)
+}
+
+function handleBatchSyncCommand(command: string) {
+  if (props.syncing || !selectedSyncCodes.value.length) return
+  emit('sync-stock', [...selectedSyncCodes.value], command === 'full')
 }
 
 function hideImportSkippedAlert() {
@@ -650,37 +633,37 @@ small {
   overflow: visible;
 }
 
-.column-filter {
+.stock-filter-grid {
   display: grid;
-  gap: 6px;
-  padding: 4px 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
 }
 
-.column-filter__label {
+.stock-filter-grid :deep(.el-input-group__prepend) {
   color: #8fb0d3;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  background: rgba(15, 23, 42, 0.9);
+  border-color: rgba(148, 163, 184, 0.18);
 }
 
-.column-filter__input :deep(.el-input__wrapper) {
-  border-radius: 10px;
+.stock-filter-grid :deep(.el-input__wrapper) {
   background: rgba(248, 251, 255, 0.08);
   box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.18);
 }
 
-.column-filter__input :deep(.el-input__inner) {
+.stock-filter-grid :deep(.el-input__inner) {
   color: #f8fbff;
 }
 
-.column-filter__input :deep(.el-input__inner::placeholder) {
+.stock-filter-grid :deep(.el-input__inner::placeholder) {
   color: #7890aa;
 }
 
 @media (max-width: 1080px) {
   .base-data-grid,
   .result-grid,
-  .manual-form {
+  .manual-form,
+  .stock-filter-grid {
     grid-template-columns: 1fr;
   }
 }

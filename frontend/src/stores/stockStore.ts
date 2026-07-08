@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import {
   api,
+  type AnnualReportExtraction,
   type BusinessSegment,
   type DeepFundamentalAnalysis,
   type ExpenseItem,
@@ -25,6 +26,7 @@ export const useStockStore = defineStore('stock', () => {
   const businessSegments = ref<BusinessSegment[]>([])
   const expenses = ref<ExpenseItem[]>([])
   const valuation = ref<ValuationMetric[]>([])
+  const annualReportExtractions = ref<AnnualReportExtraction[]>([])
   const deepFundamental = ref<DeepFundamentalAnalysis | null>(null)
   const technical = ref<TechnicalIndicators | null>(null)
   const klinePeriod = ref<'day' | 'week' | 'month'>('day')
@@ -47,11 +49,11 @@ export const useStockStore = defineStore('stock', () => {
     return ['全部', ...Array.from(new Set(values))]
   })
   const sub2Industries = computed(() => {
-    if (selectedSubIndustry.value === '全部') return ['全部']
     const values = stocks.value
       .filter((item) => {
         if (selectedIndustry.value !== '全部' && item.industry_chain !== selectedIndustry.value) return false
         const [level2] = splitIndustryDetail(item.industry_chain_detail)
+        if (selectedSubIndustry.value === '全部') return true
         return level2 === selectedSubIndustry.value
       })
       .map((item) => splitIndustryDetail(item.industry_chain_detail)[1])
@@ -135,24 +137,27 @@ export const useStockStore = defineStore('stock', () => {
 
   async function loadFundamentals(code: string) {
     try {
-      const [reports, segments, expenseRows, valuationRows, deepAnalysis] = await Promise.all([
+      const [reports, segments, expenseRows, valuationRows, deepAnalysis, extractionRows] = await Promise.all([
         api.getFinancialReports(code),
         api.getBusinessSegments(code),
         api.getExpenses(code),
         api.getValuation(code),
-        api.getDeepFundamentalAnalysis(code)
+        api.getDeepFundamentalAnalysis(code),
+        api.getAnnualReportExtractions(code)
       ])
       financialReports.value = reports.data ?? []
       businessSegments.value = segments.data ?? []
       expenses.value = expenseRows.data ?? []
       valuation.value = valuationRows.data ?? []
       deepFundamental.value = deepAnalysis.data
+      annualReportExtractions.value = extractionRows.data ?? []
     } catch (err) {
       error.value = err instanceof Error ? err.message : '基本面加载失败'
       financialReports.value = []
       businessSegments.value = []
       expenses.value = []
       valuation.value = []
+      annualReportExtractions.value = []
       deepFundamental.value = null
     }
   }
@@ -186,16 +191,31 @@ export const useStockStore = defineStore('stock', () => {
     }
   }
 
-  async function syncStockByCode(code: string) {
+  async function syncStockByCode(code: string, forceFull = false) {
     if (!code) return
     currentCode.value = code
     syncing.value = true
     error.value = null
     try {
-      await api.triggerSync([code])
+      await api.triggerSync([code], undefined, forceFull)
       await refreshAfterSync()
     } catch (err) {
       error.value = err instanceof Error ? err.message : '同步失败'
+    } finally {
+      syncing.value = false
+    }
+  }
+
+  async function syncStocksByCodes(codes: string[], forceFull = false) {
+    if (!codes.length) return
+    currentCode.value = codes[0]
+    syncing.value = true
+    error.value = null
+    try {
+      await api.triggerSync(codes, undefined, forceFull)
+      await refreshAfterSync()
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : '批量同步失败'
     } finally {
       syncing.value = false
     }
@@ -224,6 +244,7 @@ export const useStockStore = defineStore('stock', () => {
     businessSegments,
     expenses,
     valuation,
+    annualReportExtractions,
     deepFundamental,
     technical,
     klinePeriod,
@@ -247,6 +268,7 @@ export const useStockStore = defineStore('stock', () => {
     selectStock,
     setKlinePeriod,
     syncStockByCode,
+    syncStocksByCodes,
     syncAllStocks
   }
 })

@@ -34,19 +34,19 @@
       <el-tab-pane label="产业链总览" name="overview">
         <IndustryOverview />
       </el-tab-pane>
-      <el-tab-pane label="基本面深度分析" name="fundamental">
+      <el-tab-pane label="基本面深度分析" name="fundamental" lazy>
         <Fundamental />
       </el-tab-pane>
-      <el-tab-pane label="技术面分析" name="technical">
+      <el-tab-pane label="技术面分析" name="technical" lazy>
         <Technical />
       </el-tab-pane>
-      <el-tab-pane label="个股深度档案" name="detail">
+      <el-tab-pane label="个股深度档案" name="detail" lazy>
         <StockDetail />
       </el-tab-pane>
-      <el-tab-pane label="股票池" name="base-data">
+      <el-tab-pane label="股票池" name="base-data" lazy>
         <BaseData :syncing="store.syncing" @sync-stock="handleSyncStock" />
       </el-tab-pane>
-      <el-tab-pane label="导入财报" name="import">
+      <el-tab-pane label="导入财报" name="import" lazy>
         <ImportWorkbench />
       </el-tab-pane>
     </el-tabs>
@@ -90,10 +90,14 @@ const fallbackProgress = computed(() => {
 })
 const dialogProgress = computed(() => fallbackProgress.value ?? store.syncStatus?.progress ?? null)
 
-async function handleSyncStock(code: string) {
-  syncDialogMode.value = 'current'
+async function handleSyncStock(codes: string[], forceFull = false) {
+  syncDialogMode.value = codes.length > 1 ? 'all' : 'current'
   syncDialogVisible.value = true
-  await store.syncStockByCode(code)
+  if (codes.length === 1) {
+    await store.syncStockByCode(codes[0], forceFull)
+    return
+  }
+  await store.syncStocksByCodes(codes, forceFull)
 }
 
 async function handleSyncAllStocks() {

@@ -83,6 +83,32 @@ class ExpenseInput(BaseModel):
     finance_expense: Decimal | None = None
 
 
+class ReportExtractions(BaseModel):
+    operating_profit: Decimal | None = None
+    total_profit: Decimal | None = None
+    non_recurring_net_profit: Decimal | None = None
+    income_tax_expense: Decimal | None = None
+    minority_interest: Decimal | None = None
+    other_income: Decimal | None = None
+    investment_income: Decimal | None = None
+    fair_value_change_income: Decimal | None = None
+    credit_impairment_loss: Decimal | None = None
+    asset_impairment_loss: Decimal | None = None
+    asset_disposal_income: Decimal | None = None
+    cash_received_from_sales: Decimal | None = None
+    cash_received_other_operating: Decimal | None = None
+    inventory_total: Decimal | None = None
+    inventory_impairment: Decimal | None = None
+    capital_reserve: Decimal | None = None
+    total_share_capital: Decimal | None = None
+    rd_investment: Decimal | None = None
+    rd_investment_ratio: Decimal | None = None
+    patent_count: Decimal | None = None
+    invention_patent_count: Decimal | None = None
+    construction_in_progress: Decimal | None = None
+    notes: dict[str, str] = {}
+
+
 class ImportPreview(BaseModel):
     batch: ImportBatchRead
     financial: ManualFinancialInput
@@ -91,6 +117,7 @@ class ImportPreview(BaseModel):
     confidence: Decimal
     warnings: list[str] = []
     field_sources: dict[str, dict[str, str | None]] = {}
+    extractions: ReportExtractions | None = None
     document: ReportDocumentRead | None = None
     parse_job: ReportParseJobRead | None = None
     is_duplicate: bool = False
@@ -106,6 +133,7 @@ class ConfirmImportRequest(BaseModel):
     financial: ManualFinancialInput
     segments: list[SegmentInput] = []
     expenses: ExpenseInput | None = None
+    extractions: ReportExtractions | None = None
 
 
 class ConfirmImportResult(BaseModel):
@@ -113,3 +141,4 @@ class ConfirmImportResult(BaseModel):
     financial_records: int
     segment_records: int
     expense_records: int
+    extraction_records: int
