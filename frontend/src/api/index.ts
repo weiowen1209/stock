@@ -6,10 +6,13 @@ import type {
   BaseDataImportResult,
   BaseDataStockUpsert,
   BusinessSegment,
+  CandidateFact,
   ExpenseItem,
   ConfirmImportRequest,
   ConfirmImportResult,
+  ConfirmedFact,
   DeepFundamentalAnalysis,
+  EvidenceItem,
   FinancialReport,
   ImportBatch,
   ImportPreview,
@@ -182,6 +185,15 @@ export const api = {
     const response = await client.post<ApiResponse<ConfirmImportResult>>(`/api/imports/${batchId}/confirm`, payload)
     return response.data
   },
+  getCandidateFacts(params?: { batch_id?: number }) {
+    return request<CandidateFact[]>('/api/imports/candidate-facts', params)
+  },
+  getEvidenceItems(params?: { batch_id?: number; code?: string }) {
+    return request<EvidenceItem[]>('/api/imports/evidence', params)
+  },
+  getConfirmedFacts(params?: { code?: string; period?: string }) {
+    return request<ConfirmedFact[]>('/api/imports/confirmed-facts', params)
+  },
   getImportBatches() {
     return request<ImportBatch[]>('/api/imports')
   }
@@ -192,9 +204,12 @@ export type {
   BaseDataImportResult,
   BaseDataStockUpsert,
   BusinessSegment,
+  CandidateFact,
   ConfirmImportRequest,
   ConfirmImportResult,
+  ConfirmedFact,
   DeepFundamentalAnalysis,
+  EvidenceItem,
   ExpenseItem,
   FinancialReport,
   ImportBatch,

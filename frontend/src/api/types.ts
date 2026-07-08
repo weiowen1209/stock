@@ -464,10 +464,90 @@ export interface ReportExtractions {
   notes: Record<string, string>
 }
 
+export interface EvidenceItem {
+  id: number
+  source_type: string
+  source_title: string | null
+  source_url: string | null
+  source_date: string | null
+  collected_at: string
+  document_id: number | null
+  batch_id: number | null
+  parse_job_id: number | null
+  code: string | null
+  company_name: string | null
+  topic: string
+  snippet: string
+  page_no: number | null
+  section_name: string | null
+  locator_json: string | null
+  confidence: string | number | null
+  trust_level: string
+  review_status: string
+  reviewer_note: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CandidateFact {
+  id: number
+  batch_id: number
+  document_id: number | null
+  parse_job_id: number | null
+  code: string
+  company_name: string | null
+  period: string
+  period_type: string | null
+  fact_type: string
+  metric_name: string
+  metric_key: string
+  metric_value: string | number | null
+  metric_unit: string | null
+  dimension: string
+  dimension_value: string
+  evidence_id: number | null
+  evidence_ids_json: string | null
+  source_type: string
+  trust_level: string
+  confidence: string | number | null
+  parser_version: string | null
+  existing_fact_id: number | null
+  conflict_group: string | null
+  review_status: string
+  reviewer_note: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ConfirmedFact {
+  id: number
+  code: string
+  company_name: string | null
+  period: string
+  period_type: string | null
+  fact_type: string
+  metric_name: string
+  metric_key: string
+  metric_value: string | number | null
+  metric_unit: string | null
+  dimension: string
+  dimension_value: string
+  evidence_id: number | null
+  evidence_ids_json: string | null
+  source_type: string
+  trust_level: string
+  review_status: string
+  candidate_fact_id: number | null
+  import_id: number | null
+  created_at: string
+  updated_at: string
+}
+
 export interface ImportPreview {
   batch: ImportBatch
   financial: ManualFinancialInput
   segments: SegmentInput[]
+  candidate_facts: CandidateFact[]
   expenses: ExpenseInput | null
   confidence: string | number
   warnings: string[]
@@ -497,4 +577,6 @@ export interface ConfirmImportResult {
   segment_records: number
   expense_records: number
   extraction_records: number
+  candidate_records: number
+  confirmed_fact_records: number
 }
