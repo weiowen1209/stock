@@ -254,6 +254,107 @@ class ReportParseResult(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
 
 
+class EvidenceItem(Base, TimestampMixin):
+    __tablename__ = "evidence_items"
+    __table_args__ = (
+        Index("idx_evidence_code_topic", "code", "topic"),
+        Index("idx_evidence_document", "document_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    source_title: Mapped[str] = mapped_column(String(255), nullable=True)
+    source_url: Mapped[str] = mapped_column(String(500), nullable=True)
+    source_date: Mapped[date] = mapped_column(Date, nullable=True)
+    collected_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    document_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    batch_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    parse_job_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    code: Mapped[str] = mapped_column(String(10), index=True, nullable=True)
+    company_name: Mapped[str] = mapped_column(String(100), nullable=True)
+    topic: Mapped[str] = mapped_column(String(50), nullable=False)
+    snippet: Mapped[str] = mapped_column(Text, nullable=False)
+    page_no: Mapped[int] = mapped_column(Integer, nullable=True)
+    section_name: Mapped[str] = mapped_column(String(100), nullable=True)
+    locator_json: Mapped[str] = mapped_column(Text, nullable=True)
+    confidence: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=True)
+    trust_level: Mapped[str] = mapped_column(String(1), default="A", nullable=False)
+    review_status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    reviewer_note: Mapped[str] = mapped_column(Text, nullable=True)
+
+
+class CandidateFact(Base, TimestampMixin):
+    __tablename__ = "candidate_facts"
+    __table_args__ = (
+        Index("idx_candidate_batch", "batch_id"),
+        Index("idx_candidate_code_period", "code", "period"),
+        Index("idx_candidate_review_status", "review_status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    batch_id: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
+    document_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    parse_job_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    code: Mapped[str] = mapped_column(String(10), index=True, nullable=False)
+    company_name: Mapped[str] = mapped_column(String(100), nullable=True)
+    period: Mapped[str] = mapped_column(String(20), nullable=False)
+    period_type: Mapped[str] = mapped_column(String(20), nullable=True)
+    fact_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    metric_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    metric_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    metric_value: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=True)
+    metric_unit: Mapped[str] = mapped_column(String(30), nullable=True)
+    dimension: Mapped[str] = mapped_column(String(50), default="", nullable=False)
+    dimension_value: Mapped[str] = mapped_column(String(100), default="", nullable=False)
+    evidence_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    evidence_ids_json: Mapped[str] = mapped_column(Text, nullable=True)
+    source_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    trust_level: Mapped[str] = mapped_column(String(1), default="A", nullable=False)
+    confidence: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=True)
+    parser_version: Mapped[str] = mapped_column(String(30), nullable=True)
+    existing_fact_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    conflict_group: Mapped[str] = mapped_column(String(100), nullable=True)
+    review_status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    reviewer_note: Mapped[str] = mapped_column(Text, nullable=True)
+
+
+class ConfirmedFact(Base, TimestampMixin):
+    __tablename__ = "confirmed_facts"
+    __table_args__ = (
+        UniqueConstraint(
+            "code",
+            "period",
+            "fact_type",
+            "metric_key",
+            "dimension",
+            "dimension_value",
+            name="uq_confirmed_fact_identity",
+        ),
+        Index("idx_confirmed_code_period", "code", "period"),
+        Index("idx_confirmed_fact_type", "fact_type"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(10), index=True, nullable=False)
+    company_name: Mapped[str] = mapped_column(String(100), nullable=True)
+    period: Mapped[str] = mapped_column(String(20), nullable=False)
+    period_type: Mapped[str] = mapped_column(String(20), nullable=True)
+    fact_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    metric_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    metric_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    metric_value: Mapped[Decimal] = mapped_column(Numeric(20, 4), nullable=True)
+    metric_unit: Mapped[str] = mapped_column(String(30), nullable=True)
+    dimension: Mapped[str] = mapped_column(String(50), default="", nullable=False)
+    dimension_value: Mapped[str] = mapped_column(String(100), default="", nullable=False)
+    evidence_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    evidence_ids_json: Mapped[str] = mapped_column(Text, nullable=True)
+    source_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    trust_level: Mapped[str] = mapped_column(String(1), default="A", nullable=False)
+    review_status: Mapped[str] = mapped_column(String(20), default="confirmed", nullable=False)
+    candidate_fact_id: Mapped[int] = mapped_column(Integer, nullable=True)
+    import_id: Mapped[int] = mapped_column(Integer, nullable=True)
+
+
 class ImportBatch(Base):
     __tablename__ = "import_batches"
 

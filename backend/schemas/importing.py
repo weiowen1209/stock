@@ -50,6 +50,85 @@ class ImportBatchRead(OrmModel):
     confirmed_at: datetime | None = None
 
 
+class EvidenceItemRead(OrmModel):
+    id: int
+    source_type: str
+    source_title: str | None = None
+    source_url: str | None = None
+    source_date: datetime | None = None
+    collected_at: datetime
+    document_id: int | None = None
+    batch_id: int | None = None
+    parse_job_id: int | None = None
+    code: str | None = None
+    company_name: str | None = None
+    topic: str
+    snippet: str
+    page_no: int | None = None
+    section_name: str | None = None
+    locator_json: str | None = None
+    confidence: Decimal | None = None
+    trust_level: str
+    review_status: str
+    reviewer_note: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class CandidateFactRead(OrmModel):
+    id: int
+    batch_id: int
+    document_id: int | None = None
+    parse_job_id: int | None = None
+    code: str
+    company_name: str | None = None
+    period: str
+    period_type: str | None = None
+    fact_type: str
+    metric_name: str
+    metric_key: str
+    metric_value: Decimal | None = None
+    metric_unit: str | None = None
+    dimension: str = ""
+    dimension_value: str = ""
+    evidence_id: int | None = None
+    evidence_ids_json: str | None = None
+    source_type: str
+    trust_level: str
+    confidence: Decimal | None = None
+    parser_version: str | None = None
+    existing_fact_id: int | None = None
+    conflict_group: str | None = None
+    review_status: str
+    reviewer_note: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConfirmedFactRead(OrmModel):
+    id: int
+    code: str
+    company_name: str | None = None
+    period: str
+    period_type: str | None = None
+    fact_type: str
+    metric_name: str
+    metric_key: str
+    metric_value: Decimal | None = None
+    metric_unit: str | None = None
+    dimension: str = ""
+    dimension_value: str = ""
+    evidence_id: int | None = None
+    evidence_ids_json: str | None = None
+    source_type: str
+    trust_level: str
+    review_status: str
+    candidate_fact_id: int | None = None
+    import_id: int | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class ManualFinancialInput(BaseModel):
     code: str
     report_period: str
@@ -113,6 +192,7 @@ class ImportPreview(BaseModel):
     batch: ImportBatchRead
     financial: ManualFinancialInput
     segments: list[SegmentInput] = []
+    candidate_facts: list[CandidateFactRead] = []
     expenses: ExpenseInput | None = None
     confidence: Decimal
     warnings: list[str] = []
@@ -142,3 +222,5 @@ class ConfirmImportResult(BaseModel):
     segment_records: int
     expense_records: int
     extraction_records: int
+    candidate_records: int = 0
+    confirmed_fact_records: int = 0
