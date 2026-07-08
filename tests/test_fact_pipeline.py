@@ -507,6 +507,7 @@ async def test_confirm_import_materializes_non_financial_confirmed_facts():
                 financial=ManualFinancialInput(code=code, report_period=period),
                 segments=[
                     SegmentInput(
+                        segment_type="product",
                         segment_name="机器人",
                         revenue=Decimal("10.00"),
                         gross_margin=Decimal("20.00"),
@@ -543,11 +544,13 @@ async def test_confirm_import_materializes_non_financial_confirmed_facts():
         "operating_profit",
     }
     assert facts_by_key["segment_revenue"].fact_type == "segment"
-    assert facts_by_key["segment_revenue"].dimension == "segment"
+    assert facts_by_key["segment_revenue"].dimension == "product"
     assert facts_by_key["segment_revenue"].dimension_value == "机器人"
+    assert facts_by_key["segment_revenue"].candidate_fact_id is not None
     assert facts_by_key["segment_gross_margin"].fact_type == "segment"
-    assert facts_by_key["segment_gross_margin"].dimension == "segment"
+    assert facts_by_key["segment_gross_margin"].dimension == "product"
     assert facts_by_key["segment_gross_margin"].dimension_value == "机器人"
+    assert facts_by_key["segment_gross_margin"].candidate_fact_id is not None
     assert facts_by_key["rd_expense"].fact_type == "profit_impact"
     assert facts_by_key["rd_expense"].dimension == ""
     assert facts_by_key["operating_profit"].fact_type == "profit_impact"
