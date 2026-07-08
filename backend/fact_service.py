@@ -198,16 +198,33 @@ async def confirm_facts_for_import(
     extractions: ReportExtractions | None,
 ) -> int:
     candidates = await list_candidate_facts(session, batch_id=batch.id)
-    candidate_by_identity = {
-        _identity(item.metric_key, item.dimension, item.dimension_value): item for item in candidates
-    }
-    confirmed_count = 0
-    expected_identities: set[tuple[str, str, str]] = set()
+    candidates_by_identity: dict[tuple[str, str, str], list[CandidateFact]] = {}
+    for candidate in candidates:
+        candidates_by_identity.setdefault(
+            _identity(candidate.metric_key, candidate.dimension, candidate.dimension_value),
+            [],
+        ).append(candidate)
 
-    for metric in _build_metrics(financial, segments, expenses, extractions):
-        identity = _identity(metric.metric_key, metric.dimension, metric.dimension_value)
-        expected_identities.add(identity)
-        candidate = candidate_by_identity.get(identity)
+    metrics_by_identity = _dedupe_metrics_by_identity(_build_metrics(financial, segments, expenses, extractions))
+    for candidate in candidates:
+        candidate.review_status = "rejected"
+
+    confirmed_count = 0
+
+    for identity, metric in metrics_by_identity.items():
+        identity_candidates = candidates_by_identity.get(identity, [])
+        candidate = _first_exact_candidate(identity_candidates, metric)
+        if candidate:
+            candidate.review_status = "confirmed"
+        existing_fact = await _get_confirmed_fact(session, financial.code, financial.report_period, metric)
+        evidence_id = candidate.evidence_id if candidate else None
+        evidence_ids_json = candidate.evidence_ids_json if candidate else None
+        candidate_fact_id = candidate.id if candidate else None
+        if candidate is None and (existing_fact is None or existing_fact.metric_value != metric.value):
+            evidence = await _create_manual_evidence(session, batch, financial, metric)
+            evidence_id = evidence.id
+            evidence_ids_json = json.dumps([evidence.id])
+
         stmt = insert(ConfirmedFact).values(
             code=financial.code,
             period=financial.report_period,
@@ -219,12 +236,12 @@ async def confirm_facts_for_import(
             metric_unit=metric.unit,
             dimension=metric.dimension,
             dimension_value=metric.dimension_value,
-            evidence_id=candidate.evidence_id if candidate else None,
-            evidence_ids_json=candidate.evidence_ids_json if candidate else None,
+            evidence_id=evidence_id,
+            evidence_ids_json=evidence_ids_json,
             source_type=_source_type(batch),
             trust_level="A",
             review_status="confirmed",
-            candidate_fact_id=candidate.id if candidate else None,
+            candidate_fact_id=candidate_fact_id,
             import_id=batch.id,
         )
         await session.execute(
@@ -234,36 +251,95 @@ async def confirm_facts_for_import(
                     "metric_name": stmt.excluded.metric_name,
                     "metric_value": stmt.excluded.metric_value,
                     "metric_unit": stmt.excluded.metric_unit,
-                    "evidence_id": case(
-                        (stmt.excluded.evidence_id.is_not(None), stmt.excluded.evidence_id),
-                        else_=ConfirmedFact.evidence_id,
-                    ),
-                    "evidence_ids_json": case(
-                        (stmt.excluded.evidence_ids_json.is_not(None), stmt.excluded.evidence_ids_json),
-                        else_=ConfirmedFact.evidence_ids_json,
-                    ),
+                    "evidence_id": _preserve_provenance_on_same_value(stmt, "evidence_id"),
+                    "evidence_ids_json": _preserve_provenance_on_same_value(stmt, "evidence_ids_json"),
                     "source_type": stmt.excluded.source_type,
                     "trust_level": stmt.excluded.trust_level,
                     "review_status": stmt.excluded.review_status,
-                    "candidate_fact_id": case(
-                        (stmt.excluded.candidate_fact_id.is_not(None), stmt.excluded.candidate_fact_id),
-                        else_=ConfirmedFact.candidate_fact_id,
-                    ),
+                    "candidate_fact_id": _preserve_provenance_on_same_value(stmt, "candidate_fact_id"),
                     "import_id": stmt.excluded.import_id,
                     "updated_at": stmt.excluded.updated_at,
                 },
             )
         )
-        if candidate:
-            candidate.review_status = "confirmed"
         confirmed_count += 1
-
-    for candidate in candidates:
-        if _identity(candidate.metric_key, candidate.dimension, candidate.dimension_value) not in expected_identities:
-            candidate.review_status = "rejected"
 
     await session.flush()
     return confirmed_count
+
+
+def _dedupe_metrics_by_identity(metrics: list[FactMetric]) -> dict[tuple[str, str, str], FactMetric]:
+    metrics_by_identity: dict[tuple[str, str, str], FactMetric] = {}
+    for metric in metrics:
+        metrics_by_identity[_identity(metric.metric_key, metric.dimension, metric.dimension_value)] = metric
+    return metrics_by_identity
+
+
+def _first_exact_candidate(candidates: list[CandidateFact], metric: FactMetric) -> CandidateFact | None:
+    for candidate in candidates:
+        if candidate.metric_value == metric.value:
+            return candidate
+    return None
+
+
+async def _get_confirmed_fact(
+    session: AsyncSession,
+    code: str,
+    period: str,
+    metric: FactMetric,
+) -> ConfirmedFact | None:
+    result = await session.execute(
+        select(ConfirmedFact).where(
+            ConfirmedFact.code == code,
+            ConfirmedFact.period == period,
+            ConfirmedFact.fact_type == metric.fact_type,
+            ConfirmedFact.metric_key == metric.metric_key,
+            ConfirmedFact.dimension == metric.dimension,
+            ConfirmedFact.dimension_value == metric.dimension_value,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def _create_manual_evidence(
+    session: AsyncSession,
+    batch: ImportBatch,
+    financial: ManualFinancialInput,
+    metric: FactMetric,
+) -> EvidenceItem:
+    evidence = EvidenceItem(
+        source_type="manual_note",
+        source_title=batch.file_name,
+        document_id=batch.document_id,
+        batch_id=batch.id,
+        parse_job_id=batch.parse_job_id,
+        code=financial.code,
+        topic=metric.fact_type,
+        snippet=_evidence_snippet(metric, {}),
+        locator_json=json.dumps(
+            {
+                "metric_key": metric.metric_key,
+                "dimension": metric.dimension,
+                "dimension_value": metric.dimension_value,
+                "reason": "manual_confirm",
+            },
+            ensure_ascii=False,
+        ),
+        confidence=Decimal("1.00"),
+        trust_level="A",
+        review_status="confirmed",
+    )
+    session.add(evidence)
+    await session.flush()
+    return evidence
+
+
+def _preserve_provenance_on_same_value(stmt, field: str):
+    return case(
+        (getattr(stmt.excluded, field).is_not(None), getattr(stmt.excluded, field)),
+        (ConfirmedFact.metric_value == stmt.excluded.metric_value, getattr(ConfirmedFact, field)),
+        else_=None,
+    )
 
 
 def _identity(metric_key: str, dimension: str, dimension_value: str) -> tuple[str, str, str]:

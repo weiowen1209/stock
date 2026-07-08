@@ -12,7 +12,7 @@ from backend.database import AsyncSessionLocal, init_db
 from backend.fact_service import create_candidate_facts_for_import, list_candidate_facts, list_evidence_items
 from backend.import_service import confirm_import, create_manual_preview
 from backend.main import app
-from backend.models import AnnualReportExtraction, CandidateFact, ConfirmedFact, FinancialReport, ImportBatch
+from backend.models import AnnualReportExtraction, CandidateFact, ConfirmedFact, EvidenceItem, FinancialReport, ImportBatch
 from backend.schemas.importing import (
     ConfirmImportRequest,
     EvidenceItemRead,
@@ -664,6 +664,166 @@ async def test_confirm_import_rejects_candidates_missing_from_final_payload():
 
 
 @pytest.mark.asyncio
+async def test_confirm_import_changed_payload_value_uses_manual_evidence_and_rejects_candidate():
+    await init_db()
+    code = "TSTEV1"
+    period = "2099年报"
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            text(
+                """
+                DELETE FROM confirmed_facts
+                WHERE code = :code
+                AND period = :period
+                """
+            ),
+            {"code": code, "period": period},
+        )
+        preview = await create_manual_preview(
+            session,
+            ConfirmImportRequest(
+                financial=ManualFinancialInput(
+                    code=code,
+                    report_period=period,
+                    revenue=Decimal("100.00"),
+                ),
+                segments=[],
+                expenses=None,
+                extractions=None,
+            ),
+        )
+        original_candidate = (
+            await session.execute(select(CandidateFact).where(CandidateFact.batch_id == preview.batch.id))
+        ).scalar_one()
+        original_candidate_id = original_candidate.id
+        original_evidence_id = original_candidate.evidence_id
+
+        await confirm_import(
+            session,
+            preview.batch.id,
+            ConfirmImportRequest(
+                financial=ManualFinancialInput(
+                    code=code,
+                    report_period=period,
+                    revenue=Decimal("200.00"),
+                ),
+                segments=[],
+                expenses=None,
+                extractions=None,
+            ),
+        )
+        session.expire_all()
+        candidate = (
+            await session.execute(select(CandidateFact).where(CandidateFact.id == original_candidate_id))
+        ).scalar_one()
+        fact = (
+            await session.execute(
+                select(ConfirmedFact).where(
+                    ConfirmedFact.code == code,
+                    ConfirmedFact.period == period,
+                    ConfirmedFact.metric_key == "revenue",
+                )
+            )
+        ).scalar_one()
+        evidence = await session.get(EvidenceItem, fact.evidence_id)
+
+    assert candidate.review_status == "rejected"
+    assert fact.metric_value == Decimal("200.00")
+    assert fact.evidence_id is not None
+    assert fact.evidence_id != original_evidence_id
+    assert fact.evidence_ids_json == json.dumps([fact.evidence_id])
+    assert fact.candidate_fact_id is None
+    assert evidence is not None
+    assert evidence.source_type == "manual_note"
+    assert "200.00" in evidence.snippet
+
+
+@pytest.mark.asyncio
+async def test_confirm_import_deduplicates_payload_identities_and_rejects_unmatched_candidates():
+    await init_db()
+    code = "TSTDUP1"
+    period = "2099年报"
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            text(
+                """
+                DELETE FROM confirmed_facts
+                WHERE code = :code
+                AND period = :period
+                """
+            ),
+            {"code": code, "period": period},
+        )
+        preview = await create_manual_preview(
+            session,
+            ConfirmImportRequest(
+                financial=ManualFinancialInput(code=code, report_period=period),
+                segments=[
+                    SegmentInput(
+                        segment_type="product",
+                        segment_name="机器人",
+                        revenue=Decimal("100.00"),
+                    ),
+                    SegmentInput(
+                        segment_type="product",
+                        segment_name="机器人",
+                        revenue=Decimal("200.00"),
+                    ),
+                ],
+                expenses=None,
+                extractions=None,
+            ),
+        )
+
+        result = await confirm_import(
+            session,
+            preview.batch.id,
+            ConfirmImportRequest(
+                financial=preview.financial,
+                segments=[
+                    SegmentInput(
+                        segment_type="product",
+                        segment_name="机器人",
+                        revenue=Decimal("100.00"),
+                    ),
+                    SegmentInput(
+                        segment_type="product",
+                        segment_name="机器人",
+                        revenue=Decimal("200.00"),
+                    ),
+                ],
+                expenses=None,
+                extractions=None,
+            ),
+        )
+        candidates = await session.execute(select(CandidateFact).where(CandidateFact.batch_id == preview.batch.id))
+        confirmed = await session.execute(
+            select(ConfirmedFact).where(
+                ConfirmedFact.code == code,
+                ConfirmedFact.period == period,
+                ConfirmedFact.metric_key == "segment_revenue",
+            )
+        )
+
+    candidate_rows = list(candidates.scalars().all())
+    confirmed_rows = list(confirmed.scalars().all())
+    assert result.confirmed_fact_records == 1
+    assert len(confirmed_rows) == 1
+    assert confirmed_rows[0].metric_value == Decimal("200.00")
+    assert {row.review_status for row in candidate_rows} == {"confirmed", "rejected"}
+    assert all(row.review_status != "pending" for row in candidate_rows)
+    assert {
+        (row.metric_value, row.review_status)
+        for row in candidate_rows
+    } == {
+        (Decimal("100.00"), "rejected"),
+        (Decimal("200.00"), "confirmed"),
+    }
+
+
+@pytest.mark.asyncio
 async def test_confirm_import_preserves_existing_fact_provenance_when_batch_has_no_candidate():
     await init_db()
     code = "TSTPV1"
@@ -735,7 +895,7 @@ async def test_confirm_import_preserves_existing_fact_provenance_when_batch_has_
                 financial=ManualFinancialInput(
                     code=code,
                     report_period=period,
-                    revenue=Decimal("200.00"),
+                    revenue=Decimal("100.00"),
                 ),
                 segments=[],
                 expenses=None,
@@ -753,7 +913,7 @@ async def test_confirm_import_preserves_existing_fact_provenance_when_batch_has_
             )
         ).scalar_one()
 
-    assert updated_fact.metric_value == Decimal("200.00")
+    assert updated_fact.metric_value == Decimal("100.00")
     assert updated_fact.evidence_id == original_evidence_id
     assert updated_fact.evidence_ids_json == original_evidence_ids_json
     assert updated_fact.candidate_fact_id == original_candidate_fact_id
