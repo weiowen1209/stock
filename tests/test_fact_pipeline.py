@@ -1,10 +1,14 @@
+from decimal import Decimal
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 from backend.database import AsyncSessionLocal, init_db
+from backend.fact_service import create_candidate_facts_for_import, list_candidate_facts
 from backend.models import CandidateFact, ConfirmedFact
-from backend.schemas.importing import EvidenceItemRead
+from backend.models import ImportBatch
+from backend.schemas.importing import EvidenceItemRead, ManualFinancialInput, SegmentInput
 
 
 @pytest.mark.asyncio
@@ -103,6 +107,102 @@ def test_candidate_fact_batch_id_has_single_explicit_index():
     }
 
     assert batch_indexes == {"idx_candidate_batch"}
+
+
+@pytest.mark.asyncio
+async def test_create_candidate_facts_for_import_links_evidence():
+    await init_db()
+
+    async with AsyncSessionLocal() as session:
+        batch = ImportBatch(
+            import_type="pdf",
+            file_name="report.txt",
+            code="688017",
+            report_period="2025年报",
+            status="parsed",
+            document_id=11,
+            parse_job_id=22,
+        )
+        session.add(batch)
+        await session.flush()
+
+        created_count = await create_candidate_facts_for_import(
+            session=session,
+            batch=batch,
+            financial=ManualFinancialInput(
+                code="688017",
+                report_period="2025年报",
+                revenue=Decimal("570714025.26"),
+            ),
+            segments=[],
+            expenses=None,
+            extractions=None,
+            field_sources={
+                "revenue": {
+                    "value": "570714025.26",
+                    "label": "营业收入",
+                    "section": "income",
+                    "confidence": "0.90",
+                    "unit": "元",
+                    "line": "营业收入 570,714,025.26",
+                }
+            },
+            confidence=Decimal("0.90"),
+            parser_version="financial-table-v1",
+        )
+        await session.commit()
+        facts = await list_candidate_facts(session, batch_id=batch.id)
+
+    assert created_count == 1
+    assert len(facts) == 1
+    assert facts[0].metric_key == "revenue"
+    assert facts[0].metric_name == "营业收入"
+    assert facts[0].fact_type == "financial"
+    assert facts[0].metric_value == Decimal("570714025.2600")
+    assert facts[0].metric_unit == "元"
+    assert facts[0].source_type == "annual_report"
+    assert facts[0].trust_level == "A"
+    assert facts[0].dimension == ""
+    assert facts[0].dimension_value == ""
+    assert facts[0].evidence_id is not None
+
+
+@pytest.mark.asyncio
+async def test_segment_candidate_facts_keep_dimensions_distinct():
+    await init_db()
+
+    async with AsyncSessionLocal() as session:
+        batch = ImportBatch(
+            import_type="pdf",
+            file_name="report.txt",
+            code="688017",
+            report_period="2025年报",
+            status="parsed",
+        )
+        session.add(batch)
+        await session.flush()
+
+        created_count = await create_candidate_facts_for_import(
+            session=session,
+            batch=batch,
+            financial=ManualFinancialInput(code="688017", report_period="2025年报"),
+            segments=[
+                SegmentInput(segment_type="product", segment_name="谐波减速器", revenue=Decimal("100.00")),
+                SegmentInput(segment_type="product", segment_name="机电一体化产品", revenue=Decimal("200.00")),
+            ],
+            expenses=None,
+            extractions=None,
+            field_sources={},
+            confidence=Decimal("0.80"),
+            parser_version="financial-table-v1",
+        )
+        await session.commit()
+        facts = await list_candidate_facts(session, batch_id=batch.id)
+
+    assert created_count == 2
+    assert [fact.metric_key for fact in facts] == ["segment_revenue", "segment_revenue"]
+    assert {fact.dimension for fact in facts} == {"product"}
+    assert {fact.dimension_value for fact in facts} == {"谐波减速器", "机电一体化产品"}
 
 
 def _confirmed_fact() -> ConfirmedFact:
