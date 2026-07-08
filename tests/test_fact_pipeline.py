@@ -299,6 +299,243 @@ async def test_create_candidate_facts_for_import_replaces_pending_candidates_and
 
 
 @pytest.mark.asyncio
+async def test_create_candidate_facts_for_import_marks_existing_fact_conflicts():
+    await init_db()
+    code = "TSTCFC1"
+    period = "2099年报"
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            text(
+                """
+                DELETE FROM confirmed_facts
+                WHERE code = :code
+                AND period = :period
+                """
+            ),
+            {"code": code, "period": period},
+        )
+        existing = ConfirmedFact(
+            code=code,
+            period=period,
+            period_type="annual",
+            fact_type="financial",
+            metric_name="营业收入",
+            metric_key="revenue",
+            metric_value=Decimal("100.00"),
+            metric_unit="元",
+            source_type="seed",
+            trust_level="A",
+            review_status="confirmed",
+        )
+        batch = ImportBatch(
+            import_type="pdf",
+            file_name="report.txt",
+            code=code,
+            report_period=period,
+            status="parsed",
+        )
+        session.add_all([existing, batch])
+        await session.flush()
+        existing_id = existing.id
+
+        created_count = await create_candidate_facts_for_import(
+            session=session,
+            batch=batch,
+            financial=ManualFinancialInput(code=code, report_period=period, revenue=Decimal("200.00")),
+            segments=[],
+            expenses=None,
+            extractions=None,
+            field_sources={},
+            confidence=Decimal("0.80"),
+            parser_version="financial-table-v1",
+        )
+        candidate = (
+            await session.execute(select(CandidateFact).where(CandidateFact.batch_id == batch.id))
+        ).scalar_one()
+
+    assert created_count == 1
+    assert candidate.existing_fact_id == existing_id
+    assert candidate.conflict_group == f"existing_fact:{existing_id}"
+
+
+@pytest.mark.asyncio
+async def test_create_candidate_facts_for_import_marks_duplicate_identity_conflicts():
+    await init_db()
+    code = "TSTCFD1"
+    period = "2099年报"
+
+    async with AsyncSessionLocal() as session:
+        batch = ImportBatch(
+            import_type="pdf",
+            file_name="report.txt",
+            code=code,
+            report_period=period,
+            status="parsed",
+        )
+        session.add(batch)
+        await session.flush()
+
+        created_count = await create_candidate_facts_for_import(
+            session=session,
+            batch=batch,
+            financial=ManualFinancialInput(code=code, report_period=period),
+            segments=[
+                SegmentInput(segment_type="product", segment_name="机器人", revenue=Decimal("100.00")),
+                SegmentInput(segment_type="product", segment_name="机器人", revenue=Decimal("200.00")),
+            ],
+            expenses=None,
+            extractions=None,
+            field_sources={},
+            confidence=Decimal("0.80"),
+            parser_version="financial-table-v1",
+        )
+        candidates = list(
+            (
+                await session.execute(
+                    select(CandidateFact)
+                    .where(CandidateFact.batch_id == batch.id)
+                    .order_by(CandidateFact.metric_value)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    assert created_count == 2
+    assert [row.metric_value for row in candidates] == [Decimal("100.0000"), Decimal("200.0000")]
+    assert {row.conflict_group for row in candidates} == {"duplicate:segment:segment_revenue:product:机器人"}
+
+
+@pytest.mark.asyncio
+async def test_create_candidate_facts_for_import_clears_stale_pending_document_candidates_only():
+    await init_db()
+    code = "TSTDOC1"
+    period = "2099年报"
+    document_id = 987001
+
+    async with AsyncSessionLocal() as session:
+        old_pending_batch = ImportBatch(
+            import_type="pdf",
+            file_name="old-pending.txt",
+            code=code,
+            report_period=period,
+            status="parsed",
+            document_id=document_id,
+        )
+        old_rejected_batch = ImportBatch(
+            import_type="pdf",
+            file_name="old-rejected.txt",
+            code=code,
+            report_period=period,
+            status="parsed",
+            document_id=document_id,
+        )
+        new_batch = ImportBatch(
+            import_type="pdf",
+            file_name="new.txt",
+            code=code,
+            report_period=period,
+            status="parsed",
+            document_id=document_id,
+        )
+        session.add_all([old_pending_batch, old_rejected_batch, new_batch])
+        await session.flush()
+
+        pending_evidence = EvidenceItem(
+            source_type="annual_report",
+            source_title="old-pending.txt",
+            document_id=document_id,
+            batch_id=old_pending_batch.id,
+            code=code,
+            topic="financial",
+            snippet="old pending evidence",
+            trust_level="A",
+            review_status="pending",
+        )
+        rejected_evidence = EvidenceItem(
+            source_type="annual_report",
+            source_title="old-rejected.txt",
+            document_id=document_id,
+            batch_id=old_rejected_batch.id,
+            code=code,
+            topic="financial",
+            snippet="old rejected evidence",
+            trust_level="A",
+            review_status="pending",
+        )
+        session.add_all([pending_evidence, rejected_evidence])
+        await session.flush()
+
+        pending_candidate = CandidateFact(
+            batch_id=old_pending_batch.id,
+            document_id=document_id,
+            code=code,
+            period=period,
+            period_type="annual",
+            fact_type="financial",
+            metric_name="营业收入",
+            metric_key="revenue",
+            metric_value=Decimal("100.00"),
+            metric_unit="元",
+            evidence_id=pending_evidence.id,
+            evidence_ids_json=json.dumps([pending_evidence.id]),
+            source_type="annual_report",
+            trust_level="A",
+            confidence=Decimal("0.80"),
+            review_status="pending",
+        )
+        rejected_candidate = CandidateFact(
+            batch_id=old_rejected_batch.id,
+            document_id=document_id,
+            code=code,
+            period=period,
+            period_type="annual",
+            fact_type="financial",
+            metric_name="净利润",
+            metric_key="net_profit",
+            metric_value=Decimal("50.00"),
+            metric_unit="元",
+            evidence_id=rejected_evidence.id,
+            evidence_ids_json=json.dumps([rejected_evidence.id]),
+            source_type="annual_report",
+            trust_level="A",
+            confidence=Decimal("0.80"),
+            review_status="rejected",
+        )
+        session.add_all([pending_candidate, rejected_candidate])
+        await session.flush()
+        pending_candidate_id = pending_candidate.id
+        pending_evidence_id = pending_evidence.id
+        rejected_candidate_id = rejected_candidate.id
+        rejected_evidence_id = rejected_evidence.id
+
+        created_count = await create_candidate_facts_for_import(
+            session=session,
+            batch=new_batch,
+            financial=ManualFinancialInput(code=code, report_period=period, revenue=Decimal("200.00")),
+            segments=[],
+            expenses=None,
+            extractions=None,
+            field_sources={},
+            confidence=Decimal("0.90"),
+            parser_version="financial-table-v1",
+        )
+        new_candidates = await list_candidate_facts(session, batch_id=new_batch.id)
+        old_pending_candidate = await session.get(CandidateFact, pending_candidate_id)
+        old_pending_evidence = await session.get(EvidenceItem, pending_evidence_id)
+        old_rejected_candidate = await session.get(CandidateFact, rejected_candidate_id)
+        old_rejected_evidence = await session.get(EvidenceItem, rejected_evidence_id)
+
+    assert created_count == 1
+    assert len(new_candidates) == 1
+    assert old_pending_candidate is None
+    assert old_pending_evidence is None
+    assert old_rejected_candidate is not None
+    assert old_rejected_evidence is not None
+
+
+@pytest.mark.asyncio
 async def test_upload_preview_returns_candidate_facts_and_list_endpoint():
     await init_db()
     text = """
@@ -737,6 +974,83 @@ async def test_confirm_import_changed_payload_value_uses_manual_evidence_and_rej
     assert evidence is not None
     assert evidence.source_type == "manual_note"
     assert "200.00" in evidence.snippet
+
+
+@pytest.mark.asyncio
+async def test_confirm_import_changed_code_uses_manual_evidence_even_when_value_matches():
+    await init_db()
+    old_code = "TSTOLD1"
+    new_code = "TSTNEW1"
+    period = "2099年报"
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            text(
+                """
+                DELETE FROM confirmed_facts
+                WHERE code IN (:old_code, :new_code)
+                AND period = :period
+                """
+            ),
+            {"old_code": old_code, "new_code": new_code, "period": period},
+        )
+        preview = await create_manual_preview(
+            session,
+            ConfirmImportRequest(
+                financial=ManualFinancialInput(
+                    code=old_code,
+                    report_period=period,
+                    revenue=Decimal("100.00"),
+                ),
+                segments=[],
+                expenses=None,
+                extractions=None,
+            ),
+        )
+        original_candidate = (
+            await session.execute(select(CandidateFact).where(CandidateFact.batch_id == preview.batch.id))
+        ).scalar_one()
+        original_candidate_id = original_candidate.id
+        original_evidence_id = original_candidate.evidence_id
+
+        await confirm_import(
+            session,
+            preview.batch.id,
+            ConfirmImportRequest(
+                financial=ManualFinancialInput(
+                    code=new_code,
+                    report_period=period,
+                    revenue=Decimal("100.00"),
+                ),
+                segments=[],
+                expenses=None,
+                extractions=None,
+            ),
+        )
+        session.expire_all()
+        candidate = (
+            await session.execute(select(CandidateFact).where(CandidateFact.id == original_candidate_id))
+        ).scalar_one()
+        fact = (
+            await session.execute(
+                select(ConfirmedFact).where(
+                    ConfirmedFact.code == new_code,
+                    ConfirmedFact.period == period,
+                    ConfirmedFact.metric_key == "revenue",
+                )
+            )
+        ).scalar_one()
+        evidence = await session.get(EvidenceItem, fact.evidence_id)
+
+    assert candidate.review_status == "rejected"
+    assert fact.metric_value == Decimal("100.00")
+    assert fact.evidence_id is not None
+    assert fact.evidence_id != original_evidence_id
+    assert fact.evidence_ids_json == json.dumps([fact.evidence_id])
+    assert fact.candidate_fact_id is None
+    assert evidence is not None
+    assert evidence.source_type == "manual_note"
+    assert "100.00" in evidence.snippet
 
 
 @pytest.mark.asyncio

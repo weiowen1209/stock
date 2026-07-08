@@ -75,6 +75,9 @@ class FactMetric:
     dimension_value: str = ""
 
 
+FactIdentity = tuple[str, str, str, str]
+
+
 async def create_candidate_facts_for_import(
     session: AsyncSession,
     batch: ImportBatch,
@@ -90,13 +93,24 @@ async def create_candidate_facts_for_import(
         await session.flush()
 
     await _clear_pending_candidates(session, batch.id)
+    await _clear_stale_pending_document_candidates(session, batch)
     source_type = _source_type(batch)
     period_type = _period_type(financial.report_period or batch.report_period)
+    metrics = _build_metrics(financial, segments, expenses, extractions)
+    existing_facts = await _confirmed_facts_by_identity(session, financial.code, financial.report_period)
+    duplicate_identities = _duplicate_identities(metrics)
     count = 0
 
-    for metric in _build_metrics(financial, segments, expenses, extractions):
+    for metric in metrics:
         field_source = field_sources.get(metric.metric_key, {})
         metric_confidence = _confidence_from_source(field_source, confidence)
+        identity = _metric_identity(metric)
+        existing_fact = existing_facts.get(identity)
+        conflict_group = None
+        if identity in duplicate_identities:
+            conflict_group = _duplicate_conflict_group(identity)
+        elif existing_fact is not None and existing_fact.metric_value != metric.value:
+            conflict_group = f"existing_fact:{existing_fact.id}"
         evidence = EvidenceItem(
             source_type=source_type,
             source_title=batch.file_name,
@@ -144,6 +158,8 @@ async def create_candidate_facts_for_import(
                 trust_level="A",
                 confidence=metric_confidence,
                 parser_version=parser_version,
+                existing_fact_id=existing_fact.id if existing_fact else None,
+                conflict_group=conflict_group,
                 review_status="pending",
             )
         )
@@ -198,12 +214,9 @@ async def confirm_facts_for_import(
     extractions: ReportExtractions | None,
 ) -> int:
     candidates = await list_candidate_facts(session, batch_id=batch.id)
-    candidates_by_identity: dict[tuple[str, str, str], list[CandidateFact]] = {}
+    candidates_by_identity: dict[FactIdentity, list[CandidateFact]] = {}
     for candidate in candidates:
-        candidates_by_identity.setdefault(
-            _identity(candidate.metric_key, candidate.dimension, candidate.dimension_value),
-            [],
-        ).append(candidate)
+        candidates_by_identity.setdefault(_candidate_identity(candidate), []).append(candidate)
 
     metrics_by_identity = _dedupe_metrics_by_identity(_build_metrics(financial, segments, expenses, extractions))
     for candidate in candidates:
@@ -213,7 +226,7 @@ async def confirm_facts_for_import(
 
     for identity, metric in metrics_by_identity.items():
         identity_candidates = candidates_by_identity.get(identity, [])
-        candidate = _first_exact_candidate(identity_candidates, metric)
+        candidate = _first_exact_candidate(identity_candidates, metric, financial)
         if candidate:
             candidate.review_status = "confirmed"
         existing_fact = await _get_confirmed_fact(session, financial.code, financial.report_period, metric)
@@ -268,16 +281,50 @@ async def confirm_facts_for_import(
     return confirmed_count
 
 
-def _dedupe_metrics_by_identity(metrics: list[FactMetric]) -> dict[tuple[str, str, str], FactMetric]:
-    metrics_by_identity: dict[tuple[str, str, str], FactMetric] = {}
+async def _confirmed_facts_by_identity(
+    session: AsyncSession,
+    code: str,
+    period: str,
+) -> dict[FactIdentity, ConfirmedFact]:
+    result = await session.execute(
+        select(ConfirmedFact).where(
+            ConfirmedFact.code == code,
+            ConfirmedFact.period == period,
+        )
+    )
+    return {_confirmed_fact_identity(item): item for item in result.scalars().all()}
+
+
+def _duplicate_identities(metrics: list[FactMetric]) -> set[FactIdentity]:
+    seen: set[FactIdentity] = set()
+    duplicates: set[FactIdentity] = set()
     for metric in metrics:
-        metrics_by_identity[_identity(metric.metric_key, metric.dimension, metric.dimension_value)] = metric
+        identity = _metric_identity(metric)
+        if identity in seen:
+            duplicates.add(identity)
+        seen.add(identity)
+    return duplicates
+
+
+def _dedupe_metrics_by_identity(metrics: list[FactMetric]) -> dict[FactIdentity, FactMetric]:
+    metrics_by_identity: dict[FactIdentity, FactMetric] = {}
+    for metric in metrics:
+        metrics_by_identity[_metric_identity(metric)] = metric
     return metrics_by_identity
 
 
-def _first_exact_candidate(candidates: list[CandidateFact], metric: FactMetric) -> CandidateFact | None:
+def _first_exact_candidate(
+    candidates: list[CandidateFact],
+    metric: FactMetric,
+    financial: ManualFinancialInput,
+) -> CandidateFact | None:
     for candidate in candidates:
-        if candidate.metric_value == metric.value:
+        if (
+            candidate.code == financial.code
+            and candidate.period == financial.report_period
+            and candidate.fact_type == metric.fact_type
+            and candidate.metric_value == metric.value
+        ):
             return candidate
     return None
 
@@ -342,8 +389,24 @@ def _preserve_provenance_on_same_value(stmt, field: str):
     )
 
 
-def _identity(metric_key: str, dimension: str, dimension_value: str) -> tuple[str, str, str]:
-    return (metric_key, dimension or "", dimension_value or "")
+def _metric_identity(metric: FactMetric) -> FactIdentity:
+    return _identity(metric.fact_type, metric.metric_key, metric.dimension, metric.dimension_value)
+
+
+def _candidate_identity(candidate: CandidateFact) -> FactIdentity:
+    return _identity(candidate.fact_type, candidate.metric_key, candidate.dimension, candidate.dimension_value)
+
+
+def _confirmed_fact_identity(fact: ConfirmedFact) -> FactIdentity:
+    return _identity(fact.fact_type, fact.metric_key, fact.dimension, fact.dimension_value)
+
+
+def _identity(fact_type: str, metric_key: str, dimension: str, dimension_value: str) -> FactIdentity:
+    return (fact_type, metric_key, dimension or "", dimension_value or "")
+
+
+def _duplicate_conflict_group(identity: FactIdentity) -> str:
+    return f"duplicate:{identity[0]}:{identity[1]}:{identity[2]}:{identity[3]}"
 
 
 async def _clear_pending_candidates(session: AsyncSession, batch_id: int) -> None:
@@ -354,6 +417,29 @@ async def _clear_pending_candidates(session: AsyncSession, batch_id: int) -> Non
         )
     )
     pending_candidates = list(result.scalars().all())
+    await _delete_candidates_and_pending_evidence(session, pending_candidates)
+
+
+async def _clear_stale_pending_document_candidates(session: AsyncSession, batch: ImportBatch) -> None:
+    if batch.document_id is None:
+        return
+    result = await session.execute(
+        select(CandidateFact).where(
+            CandidateFact.document_id == batch.document_id,
+            CandidateFact.batch_id != batch.id,
+            CandidateFact.review_status == "pending",
+        )
+    )
+    pending_candidates = list(result.scalars().all())
+    await _delete_candidates_and_pending_evidence(session, pending_candidates)
+
+
+async def _delete_candidates_and_pending_evidence(
+    session: AsyncSession,
+    pending_candidates: list[CandidateFact],
+) -> None:
+    if not pending_candidates:
+        return
     evidence_ids = [item.evidence_id for item in pending_candidates if item.evidence_id is not None]
     for item in pending_candidates:
         await session.delete(item)
@@ -361,16 +447,50 @@ async def _clear_pending_candidates(session: AsyncSession, batch_id: int) -> Non
     if not evidence_ids:
         return
 
+    deletable_evidence_ids = await _deletable_pending_evidence_ids(session, set(evidence_ids))
+    if not deletable_evidence_ids:
+        return
+
     evidence_result = await session.execute(
         select(EvidenceItem).where(
-            EvidenceItem.batch_id == batch_id,
             EvidenceItem.review_status == "pending",
-            EvidenceItem.id.in_(evidence_ids),
+            EvidenceItem.id.in_(deletable_evidence_ids),
         )
     )
     for item in evidence_result.scalars().all():
         await session.delete(item)
     await session.flush()
+
+
+async def _deletable_pending_evidence_ids(session: AsyncSession, evidence_ids: set[int]) -> set[int]:
+    remaining_candidate_result = await session.execute(
+        select(CandidateFact.evidence_id).where(CandidateFact.evidence_id.in_(evidence_ids))
+    )
+    remaining_candidate_ids = {
+        item for item in remaining_candidate_result.scalars().all() if item is not None
+    }
+    confirmed_result = await session.execute(
+        select(ConfirmedFact.evidence_id).where(ConfirmedFact.evidence_id.in_(evidence_ids))
+    )
+    confirmed_ids = {item for item in confirmed_result.scalars().all() if item is not None}
+    confirmed_json_result = await session.execute(
+        select(ConfirmedFact.evidence_ids_json).where(ConfirmedFact.evidence_ids_json.is_not(None))
+    )
+    for evidence_ids_json in confirmed_json_result.scalars().all():
+        confirmed_ids.update(_matching_evidence_ids_from_json(evidence_ids_json, evidence_ids))
+    return evidence_ids - remaining_candidate_ids - confirmed_ids
+
+
+def _matching_evidence_ids_from_json(evidence_ids_json: str | None, expected_ids: set[int]) -> set[int]:
+    if not evidence_ids_json:
+        return set()
+    try:
+        parsed_ids = json.loads(evidence_ids_json)
+    except (TypeError, ValueError):
+        return set()
+    if not isinstance(parsed_ids, list):
+        return set()
+    return {item for item in parsed_ids if type(item) is int and item in expected_ids}
 
 
 def _build_metrics(
