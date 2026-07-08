@@ -6,7 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from sqlalchemy import case, desc, select
+from sqlalchemy import case, desc, func, select
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -514,6 +514,7 @@ async def _upsert_financial(
             "source": stmt.excluded.source,
             "import_id": stmt.excluded.import_id,
             "review_status": stmt.excluded.review_status,
+            "updated_at": func.now(),
         }
     )
     await session.execute(stmt.on_conflict_do_update(index_elements=["code", "report_period"], set_=update_fields))
@@ -644,6 +645,7 @@ async def _upsert_extractions(
             "import_id": stmt.excluded.import_id,
             "source": stmt.excluded.source,
             "review_status": stmt.excluded.review_status,
+            "updated_at": func.now(),
         }
     )
     await session.execute(stmt.on_conflict_do_update(index_elements=["code", "report_period"], set_=update_fields))

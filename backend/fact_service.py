@@ -2,7 +2,7 @@ import json
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
-from sqlalchemy import asc, select
+from sqlalchemy import asc, case, select
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -234,12 +234,21 @@ async def confirm_facts_for_import(
                     "metric_name": stmt.excluded.metric_name,
                     "metric_value": stmt.excluded.metric_value,
                     "metric_unit": stmt.excluded.metric_unit,
-                    "evidence_id": stmt.excluded.evidence_id,
-                    "evidence_ids_json": stmt.excluded.evidence_ids_json,
+                    "evidence_id": case(
+                        (stmt.excluded.evidence_id.is_not(None), stmt.excluded.evidence_id),
+                        else_=ConfirmedFact.evidence_id,
+                    ),
+                    "evidence_ids_json": case(
+                        (stmt.excluded.evidence_ids_json.is_not(None), stmt.excluded.evidence_ids_json),
+                        else_=ConfirmedFact.evidence_ids_json,
+                    ),
                     "source_type": stmt.excluded.source_type,
                     "trust_level": stmt.excluded.trust_level,
                     "review_status": stmt.excluded.review_status,
-                    "candidate_fact_id": stmt.excluded.candidate_fact_id,
+                    "candidate_fact_id": case(
+                        (stmt.excluded.candidate_fact_id.is_not(None), stmt.excluded.candidate_fact_id),
+                        else_=ConfirmedFact.candidate_fact_id,
+                    ),
                     "import_id": stmt.excluded.import_id,
                     "updated_at": stmt.excluded.updated_at,
                 },

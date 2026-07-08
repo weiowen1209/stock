@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from decimal import Decimal
 
 import pytest
@@ -536,6 +537,209 @@ async def test_confirm_import_does_not_overwrite_legacy_values_with_nulls():
     row = report.scalar_one()
     assert row.revenue == Decimal("100.00")
     assert row.net_profit == Decimal("60.00")
+
+
+@pytest.mark.asyncio
+async def test_confirm_import_rejects_candidates_missing_from_final_payload():
+    await init_db()
+    code = "TSTRJ1"
+    period = "2099年报"
+
+    async with AsyncSessionLocal() as session:
+        preview = await create_manual_preview(
+            session,
+            ConfirmImportRequest(
+                financial=ManualFinancialInput(
+                    code=code,
+                    report_period=period,
+                    revenue=Decimal("100.00"),
+                    net_profit=Decimal("50.00"),
+                ),
+                segments=[],
+                expenses=None,
+                extractions=None,
+            ),
+        )
+
+        result = await confirm_import(
+            session,
+            preview.batch.id,
+            ConfirmImportRequest(
+                financial=ManualFinancialInput(
+                    code=code,
+                    report_period=period,
+                    revenue=Decimal("100.00"),
+                    net_profit=None,
+                ),
+                segments=[],
+                expenses=None,
+                extractions=None,
+            ),
+        )
+        candidates = await session.execute(select(CandidateFact).where(CandidateFact.batch_id == preview.batch.id))
+
+    status_by_metric = {row.metric_key: row.review_status for row in candidates.scalars().all()}
+    assert result.confirmed_fact_records == 1
+    assert status_by_metric == {"revenue": "confirmed", "net_profit": "rejected"}
+
+
+@pytest.mark.asyncio
+async def test_confirm_import_preserves_existing_fact_provenance_when_batch_has_no_candidate():
+    await init_db()
+    code = "TSTPV1"
+    period = "2099年报"
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            text(
+                """
+                DELETE FROM confirmed_facts
+                WHERE code = :code
+                AND period = :period
+                """
+            ),
+            {"code": code, "period": period},
+        )
+        first_preview = await create_manual_preview(
+            session,
+            ConfirmImportRequest(
+                financial=ManualFinancialInput(
+                    code=code,
+                    report_period=period,
+                    revenue=Decimal("100.00"),
+                ),
+                segments=[],
+                expenses=None,
+                extractions=None,
+            ),
+        )
+        await confirm_import(
+            session,
+            first_preview.batch.id,
+            ConfirmImportRequest(
+                financial=first_preview.financial,
+                segments=[],
+                expenses=None,
+                extractions=None,
+            ),
+        )
+        first_fact = (
+            await session.execute(
+                select(ConfirmedFact).where(
+                    ConfirmedFact.code == code,
+                    ConfirmedFact.period == period,
+                    ConfirmedFact.metric_key == "revenue",
+                )
+            )
+        ).scalar_one()
+        original_evidence_id = first_fact.evidence_id
+        original_evidence_ids_json = first_fact.evidence_ids_json
+        original_candidate_fact_id = first_fact.candidate_fact_id
+
+        second_preview = await create_manual_preview(
+            session,
+            ConfirmImportRequest(
+                financial=ManualFinancialInput(code=code, report_period=period),
+                segments=[],
+                expenses=None,
+                extractions=None,
+            ),
+        )
+        await confirm_import(
+            session,
+            second_preview.batch.id,
+            ConfirmImportRequest(
+                financial=ManualFinancialInput(
+                    code=code,
+                    report_period=period,
+                    revenue=Decimal("200.00"),
+                ),
+                segments=[],
+                expenses=None,
+                extractions=None,
+            ),
+        )
+        session.expire_all()
+        updated_fact = (
+            await session.execute(
+                select(ConfirmedFact).where(
+                    ConfirmedFact.code == code,
+                    ConfirmedFact.period == period,
+                    ConfirmedFact.metric_key == "revenue",
+                )
+            )
+        ).scalar_one()
+
+    assert updated_fact.metric_value == Decimal("200.00")
+    assert updated_fact.evidence_id == original_evidence_id
+    assert updated_fact.evidence_ids_json == original_evidence_ids_json
+    assert updated_fact.candidate_fact_id == original_candidate_fact_id
+
+
+@pytest.mark.asyncio
+async def test_confirm_import_refreshes_financial_report_updated_at_on_conflict():
+    await init_db()
+    code = "TSTUPD1"
+    period = "2099年报"
+    old_updated_at = datetime(2000, 1, 1, 0, 0, 0)
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(
+            text(
+                """
+                DELETE FROM financial_reports
+                WHERE code = :code
+                AND report_period = :period
+                """
+            ),
+            {"code": code, "period": period},
+        )
+        session.add(
+            FinancialReport(
+                code=code,
+                report_period=period,
+                revenue=Decimal("100.00"),
+                source="seed",
+                review_status="confirmed",
+                updated_at=old_updated_at,
+            )
+        )
+        await session.commit()
+
+        preview = await create_manual_preview(
+            session,
+            ConfirmImportRequest(
+                financial=ManualFinancialInput(
+                    code=code,
+                    report_period=period,
+                    revenue=Decimal("200.00"),
+                ),
+                segments=[],
+                expenses=None,
+                extractions=None,
+            ),
+        )
+        await confirm_import(
+            session,
+            preview.batch.id,
+            ConfirmImportRequest(
+                financial=preview.financial,
+                segments=[],
+                expenses=None,
+                extractions=None,
+            ),
+        )
+        report = (
+            await session.execute(
+                select(FinancialReport).where(
+                    FinancialReport.code == code,
+                    FinancialReport.report_period == period,
+                )
+            )
+        ).scalar_one()
+
+    assert report.revenue == Decimal("200.00")
+    assert report.updated_at > old_updated_at
 
 
 def _confirmed_fact() -> ConfirmedFact:
